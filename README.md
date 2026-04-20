@@ -35,7 +35,7 @@ pi install /absolute/path/to/pi-windsurf-provider
 As Pi package after publishing repo:
 
 ```bash
-pi install git:https://github.com/<owner>/pi-windsurf-provider
+pi install git:https://github.com/wowyuarm/pi-windsurf-provider
 ```
 
 ## Use
@@ -87,4 +87,5 @@ Default upstream endpoint:
 
 - Extension is packaged for Pi community sharing through `pi install`
 - Provider is intentionally focused on single Pi-facing model: `swe-1.6`
+- Default model guidance is distilled from captured real Windsurf Cascade requests, then adapted to Pi runtime instead of copied verbatim
 - Output history and tool follow-up have been verified in real Pi sessions
