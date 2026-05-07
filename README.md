@@ -1,6 +1,6 @@
 # pi-windsurf-provider
 
-Pi extension that exposes Windsurf upstream as Pi model provider `windsurf/swe-1.6`.
+Pi extension that exposes Windsurf upstream as Pi model provider `windsurf`.
 
 ## What it does
 
@@ -10,13 +10,16 @@ Pi extension that exposes Windsurf upstream as Pi model provider `windsurf/swe-1
 - Streams back text, thinking, and tool-call events
 - Does not need local `language_server`
 
-## Model
+## Models
 
 ```text
 windsurf/swe-1.6
+windsurf/claude-opus-4.6-thinking
 ```
 
-Current route uses verified direct coding path for Pi-facing `SWE-1.6`.
+Both routes use verified direct coding path and keep Pi-facing prompts, history, and tools.
+
+`claude-opus-4.6-thinking` maps to Windsurf's Opus 4.6 High Thinking route.
 
 ## Install
 
@@ -49,7 +52,7 @@ pi -e /absolute/path/to/pi-windsurf-provider --list-models windsurf
 Run:
 
 ```bash
-pi -e /absolute/path/to/pi-windsurf-provider --provider windsurf --model swe-1.6 -p --no-session "Say OK in one word"
+pi -e /absolute/path/to/pi-windsurf-provider --provider windsurf --model claude-opus-4.6-thinking -p --no-session "Say OK in one word"
 ```
 
 ## Requirements
@@ -73,19 +76,22 @@ In plain words:
 ## Optional env
 
 - `WINDSURF_METADATA_API_KEY`
+- `WINDSURF_API_KEY`
+- `WINDSURF_API_SERVER_URL`
 - `WINDSURF_STATE_DIR`
 - `PI_WINDSURF_PROVIDER_URL`
 - `PI_WINDSURF_PROVIDER_DEBUG=1`
 
-If you set `WINDSURF_METADATA_API_KEY`, that key is used directly instead of reading local `accounts.json`.
+If you set `WINDSURF_METADATA_API_KEY` or `WINDSURF_API_KEY`, that key is used directly instead of reading local credential state.
 
-Default upstream endpoint:
+Default upstream endpoint is discovered from local Windsurf state when available, then falls back to:
 
 - `https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage`
 
 ## Notes
 
 - Extension is packaged for Pi community sharing through `pi install`
-- Provider is intentionally focused on single Pi-facing model: `swe-1.6`
+- `swe-1.6` uses legacy Windsurf numeric model id `377`
+- `claude-opus-4.6-thinking` uses Windsurf `chat_model_uid`
 - Default model guidance is distilled from captured real Windsurf Cascade requests, then adapted to Pi runtime instead of copied verbatim
 - Output history and tool follow-up have been verified in real Pi sessions

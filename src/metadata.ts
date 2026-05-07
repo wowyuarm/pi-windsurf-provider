@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { arch, cpus, homedir, hostname, platform, release, userInfo, version } from "node:os";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
@@ -35,6 +36,7 @@ export interface WindsurfMetadataConfig {
 
 interface AccountRecord {
   apiKey?: unknown;
+  apiServerUrl?: unknown;
   isActive?: unknown;
 }
 
@@ -86,20 +88,29 @@ export async function buildRequestMetadataBytes(sessionId: string = crypto.rando
 }
 
 export function discoverMetadataApiKey(config = loadMetadataConfig()): string {
-  const envValue = readEnv(["WINDSURF_METADATA_API_KEY"]);
+  const envValue = readEnv(["WINDSURF_METADATA_API_KEY", "WINDSURF_API_KEY"]);
   if (envValue) {
     return envValue;
   }
 
-  const accounts = loadAccounts(config.stateDir);
-  const active = accounts.find((item) => item.isActive === true);
-  const chosen = active ?? accounts[0];
+  const chosen = chooseAccount(loadCredentialRecords(config.stateDir));
   const apiKey = typeof chosen?.apiKey === "string" ? chosen.apiKey.trim() : "";
   if (apiKey) {
     return apiKey;
   }
 
-  throw new Error("Unable to discover Windsurf api key. Set WINDSURF_METADATA_API_KEY.");
+  throw new Error("Unable to discover Windsurf api key. Set WINDSURF_METADATA_API_KEY or WINDSURF_API_KEY.");
+}
+
+export function discoverApiServerBaseUrl(config = loadMetadataConfig()): string | undefined {
+  const envValue = readEnv(["WINDSURF_API_SERVER_URL"]);
+  if (envValue) {
+    return envValue.replace(/\/+$/, "");
+  }
+
+  const chosen = chooseAccount(loadCredentialRecords(config.stateDir));
+  const apiServerUrl = typeof chosen?.apiServerUrl === "string" ? chosen.apiServerUrl.trim() : "";
+  return apiServerUrl ? apiServerUrl.replace(/\/+$/, "") : undefined;
 }
 
 async function fetchUserJwt(apiKey: string, config: WindsurfMetadataConfig): Promise<string> {
@@ -154,6 +165,16 @@ async function fetchUserJwt(apiKey: string, config: WindsurfMetadataConfig): Pro
   return userJwt;
 }
 
+function loadCredentialRecords(stateDir: string): AccountRecord[] {
+  const records = [...loadAccounts(stateDir), ...loadStateDatabaseAuthRecords(stateDir), ...loadWindowsStateDatabaseAuthRecords()];
+  records.sort(compareActiveFirst);
+  return records;
+}
+
+function chooseAccount(accounts: AccountRecord[]): AccountRecord | undefined {
+  return accounts.find((item) => item.isActive === true) ?? accounts[0];
+}
+
 function loadAccounts(stateDir: string): AccountRecord[] {
   const root = join(stateDir, "User", "globalStorage");
   if (!existsSync(root)) {
@@ -175,6 +196,75 @@ function loadAccounts(stateDir: string): AccountRecord[] {
   }
 
   return accounts;
+}
+
+function loadStateDatabaseAuthRecords(stateDir: string): AccountRecord[] {
+  return loadAuthRecordsFromStateDatabase(join(stateDir, "User", "globalStorage", "state.vscdb"));
+}
+
+function loadWindowsStateDatabaseAuthRecords(): AccountRecord[] {
+  const records: AccountRecord[] = [];
+  for (const path of windowsWindsurfStateDatabaseCandidates()) {
+    records.push(...loadAuthRecordsFromStateDatabase(path));
+  }
+  return records;
+}
+
+function loadAuthRecordsFromStateDatabase(path: string): AccountRecord[] {
+  if (!existsSync(path)) {
+    return [];
+  }
+
+  const rows = readStateDatabaseJsonRows(path, ["windsurfAuthStatus", "codeium.windsurf"]);
+  const authStatus = rows.get("windsurfAuthStatus");
+  const windsurfState = rows.get("codeium.windsurf");
+  const apiServerUrl = typeof windsurfState?.apiServerUrl === "string" ? windsurfState.apiServerUrl : undefined;
+  const apiKey = typeof authStatus?.apiKey === "string" ? authStatus.apiKey : undefined;
+  if (!apiKey && !apiServerUrl) {
+    return [];
+  }
+  return [{ apiKey, apiServerUrl, isActive: true }];
+}
+
+function readStateDatabaseJsonRows(path: string, keys: string[]): Map<string, Record<string, unknown>> {
+  const rows = new Map<string, Record<string, unknown>>();
+  try {
+    const sql = `select key, value from ItemTable where key in (${keys.map((key) => `'${key.replace(/'/g, "''")}'`).join(",")});`;
+    const output = execFileSync("sqlite3", ["-separator", "\t", path, sql], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    for (const line of output.split(/\r?\n/)) {
+      const separator = line.indexOf("\t");
+      if (separator === -1) {
+        continue;
+      }
+      const key = line.slice(0, separator);
+      const value = parseJsonRecord(line.slice(separator + 1));
+      if (value) {
+        rows.set(key, value);
+      }
+    }
+  } catch {
+  }
+  return rows;
+}
+
+function windowsWindsurfStateDatabaseCandidates(): string[] {
+  const usersRoot = "/mnt/c/Users";
+  try {
+    return readdirSync(usersRoot)
+      .map((entry) => join(usersRoot, entry, "AppData", "Roaming", "Windsurf", "User", "globalStorage", "state.vscdb"))
+      .filter((path) => existsSync(path));
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeAccountsPayload(payload: unknown): AccountRecord[] {

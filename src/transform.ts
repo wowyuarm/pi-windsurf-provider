@@ -50,6 +50,10 @@ const DIRECT_MODEL_MAP: Record<string, number> = {
   "swe-1.6": 377,
 };
 
+const DIRECT_MODEL_UID_MAP: Record<string, string> = {
+  "claude-opus-4.6-thinking": "claude-opus-4-6-thinking",
+};
+
 export interface StreamState {
   output: AssistantMessage;
   conversationId: string;
@@ -71,6 +75,15 @@ export const WINDSURF_MODELS = [
     contextWindow: 200000,
     maxTokens: 128000,
   },
+  {
+    id: "claude-opus-4.6-thinking",
+    name: "Claude Opus 4.6 Thinking",
+    reasoning: true,
+    input: ["text"] as Array<"text">,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 200000,
+    maxTokens: 128000,
+  },
 ];
 
 export function buildGetChatMessageRequest(
@@ -80,7 +93,8 @@ export function buildGetChatMessageRequest(
   conversationId: string,
 ): Uint8Array {
   const internalModel = DIRECT_MODEL_MAP[model.id];
-  if (!internalModel) {
+  const internalModelUid = DIRECT_MODEL_UID_MAP[model.id];
+  if (!internalModel && !internalModelUid) {
     throw new Error(`Unsupported Windsurf model: ${model.id}`);
   }
 
@@ -88,7 +102,8 @@ export function buildGetChatMessageRequest(
     encodeMessageField(1, metadataBytes),
     encodeStringField(2, buildSystemPrompt(context)),
     ...convertMessages(context.messages).map((message) => encodeMessageField(3, message)),
-    encodeVarintField(6, internalModel),
+    ...(internalModel ? [encodeVarintField(6, internalModel)] : []),
+    ...(internalModelUid ? [encodeStringField(21, internalModelUid)] : []),
     encodeVarintField(7, REQUEST_TYPE_GENERAL),
     encodeMessageField(8, buildCompletionConfiguration(model)),
     ...convertTools(context.tools ?? []).map((tool) => encodeMessageField(10, tool)),

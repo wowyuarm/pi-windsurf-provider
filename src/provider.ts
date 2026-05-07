@@ -14,7 +14,7 @@ import {
   parseTrailerError,
   readResponseError,
 } from "./connect.ts";
-import { buildRequestMetadataBytes } from "./metadata.ts";
+import { buildRequestMetadataBytes, discoverApiServerBaseUrl } from "./metadata.ts";
 import {
   applyResponseFrame,
   buildGetChatMessageRequest,
@@ -110,6 +110,10 @@ function buildUpstreamUrl(): string {
   const value = process.env.PI_WINDSURF_PROVIDER_URL?.trim();
   if (value) {
     return value;
+  }
+  const discoveredBaseUrl = discoverApiServerBaseUrl();
+  if (discoveredBaseUrl) {
+    return `${discoveredBaseUrl}${DEFAULT_ENDPOINT}`;
   }
   return `${DEFAULT_BASE_URL}${DEFAULT_ENDPOINT}`;
 }
