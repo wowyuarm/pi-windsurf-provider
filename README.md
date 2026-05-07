@@ -14,6 +14,7 @@ Pi extension that exposes Windsurf upstream as Pi model provider `windsurf`.
 
 ```text
 windsurf/swe-1.6                   Codeium internal model (enum 420)
+windsurf/swe-1.6-fast              Codeium internal model fast variant (enum 421)
 windsurf/claude-opus-4-7           Claude Opus 4.7 via Windsurf
 windsurf/claude-opus-4-6-thinking   Claude Opus 4.6 Thinking via Windsurf
 ```

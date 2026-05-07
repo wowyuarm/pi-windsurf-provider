@@ -49,6 +49,7 @@ const TOOL_READ_ONLY_HINT_NAMES = new Set([
 
 const DIRECT_MODEL_MAP: Record<string, number> = {
   "swe-1.6": 420,
+  "swe-1.6-fast": 421,
 };
 
 const DIRECT_MODEL_UID_MAP: Record<string, string> = {
@@ -71,6 +72,15 @@ export const WINDSURF_MODELS = [
   {
     id: "swe-1.6",
     name: "SWE-1.6",
+    reasoning: true,
+    input: ["text"] as Array<"text">,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 200000,
+    maxTokens: 128000,
+  },
+  {
+    id: "swe-1.6-fast",
+    name: "SWE-1.6 Fast",
     reasoning: true,
     input: ["text"] as Array<"text">,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
