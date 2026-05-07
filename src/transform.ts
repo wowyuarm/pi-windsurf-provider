@@ -47,11 +47,12 @@ const TOOL_READ_ONLY_HINT_NAMES = new Set([
 ]);
 
 const DIRECT_MODEL_MAP: Record<string, number> = {
-  "swe-1.6": 377,
+  "swe-1.6": 420,
 };
 
 const DIRECT_MODEL_UID_MAP: Record<string, string> = {
-  "claude-opus-4.6-thinking": "claude-opus-4-6-thinking",
+  "claude-opus-4-7": "claude-opus-4-7",
+  "claude-opus-4-6-thinking": "claude-opus-4-6-thinking",
 };
 
 export interface StreamState {
@@ -76,12 +77,21 @@ export const WINDSURF_MODELS = [
     maxTokens: 128000,
   },
   {
-    id: "claude-opus-4.6-thinking",
+    id: "claude-opus-4-7",
+    name: "Claude Opus 4.7",
+    reasoning: true,
+    input: ["text"] as Array<"text">,
+    cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+    contextWindow: 1000000,
+    maxTokens: 128000,
+  },
+  {
+    id: "claude-opus-4-6-thinking",
     name: "Claude Opus 4.6 Thinking",
     reasoning: true,
     input: ["text"] as Array<"text">,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 200000,
+    cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+    contextWindow: 1000000,
     maxTokens: 128000,
   },
 ];
@@ -98,15 +108,19 @@ export function buildGetChatMessageRequest(
     throw new Error(`Unsupported Windsurf model: ${model.id}`);
   }
 
+  const isInternal = !!internalModel;
+
   const parts: Uint8Array[] = [
     encodeMessageField(1, metadataBytes),
     encodeStringField(2, buildSystemPrompt(context)),
     ...convertMessages(context.messages).map((message) => encodeMessageField(3, message)),
-    ...(internalModel ? [encodeVarintField(6, internalModel)] : []),
-    ...(internalModelUid ? [encodeStringField(21, internalModelUid)] : []),
+    encodeVarintField(5, isInternal ? 1 : 0),
+    ...(isInternal ? [encodeVarintField(6, internalModel)] : []),
+    ...(!isInternal && internalModelUid ? [encodeStringField(21, internalModelUid)] : []),
     encodeVarintField(7, REQUEST_TYPE_GENERAL),
     encodeMessageField(8, buildCompletionConfiguration(model)),
     ...convertTools(context.tools ?? []).map((tool) => encodeMessageField(10, tool)),
+    ...(!isInternal ? [encodeMessageField(15, buildEnterpriseChatModelConfig(model))] : []),
     encodeStringField(16, conversationId),
     encodeVarintField(20, PLANNER_MODE_DEFAULT),
   ];
@@ -367,6 +381,15 @@ function buildCompletionConfiguration(model: Model<Api>): Uint8Array {
     encodeDoubleField(8, 1),
     ...stopPatterns.map((pattern) => encodeStringField(9, pattern)),
     encodeDoubleField(11, 1),
+  );
+}
+
+function buildEnterpriseChatModelConfig(model: Model<Api>): Uint8Array {
+  const maxOutput = Math.max(1, Math.min(model.maxTokens ?? 64000, 64000));
+  const maxInput = Math.max(1, Math.min(model.contextWindow ?? 200000, 1000000));
+  return concatBytes(
+    encodeVarintField(2, maxOutput),
+    encodeVarintField(3, maxInput),
   );
 }
 
