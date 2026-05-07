@@ -13,13 +13,28 @@ Pi extension that exposes Windsurf upstream as Pi model provider `windsurf`.
 ## Models
 
 ```text
-windsurf/swe-1.6
-windsurf/claude-opus-4.6-thinking
+windsurf/swe-1.6                   Codeium internal model (enum 420)
+windsurf/claude-opus-4-7           Claude Opus 4.7 via Windsurf
+windsurf/claude-opus-4-6-thinking   Claude Opus 4.6 Thinking via Windsurf
 ```
 
-Both routes use verified direct coding path and keep Pi-facing prompts, history, and tools.
+### Model routing
 
-`claude-opus-4.6-thinking` maps to Windsurf's Opus 4.6 High Thinking route.
+Windsurf upstream `GetChatMessageRequest` uses three fields for model selection:
+
+| Field | Name | Type | Internal | External |
+|-------|------|------|----------|----------|
+| 5 | `use_internal_chat_model` | bool | `1` | `0` |
+| 6 | `internal_chat_model` | enum | model enum | (absent) |
+| 21 | `chat_model_uid` | string | (absent) | model UID |
+| 15 | `enterprise_chat_model_config` | message | (absent) | max tokens |
+
+- Internal models (SWE-1.6): field 5=true, field 6=enum_value
+- External models (Claude Opus): field 5=false, field 21=model_uid, field 15=token config
+
+Claude model parameters mirror Pi's native Anthropic model defaults:
+- contextWindow: 1M, maxTokens: 128K
+- cost: $5/M input, $25/M output
 
 ## Install
 
@@ -91,7 +106,5 @@ Default upstream endpoint is discovered from local Windsurf state when available
 ## Notes
 
 - Extension is packaged for Pi community sharing through `pi install`
-- `swe-1.6` uses legacy Windsurf numeric model id `377`
-- `claude-opus-4.6-thinking` uses Windsurf `chat_model_uid`
 - Default model guidance is distilled from captured real Windsurf Cascade requests, then adapted to Pi runtime instead of copied verbatim
 - Output history and tool follow-up have been verified in real Pi sessions
