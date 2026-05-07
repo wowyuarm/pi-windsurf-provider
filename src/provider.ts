@@ -55,7 +55,7 @@ function streamWindsurf(
 
     try {
       const metadataBytes = await buildRequestMetadataBytes(conversationId);
-      const requestBytes = buildGetChatMessageRequest(model, context, metadataBytes, conversationId);
+      const requestBytes = buildGetChatMessageRequest(model, context, metadataBytes, conversationId, options?.reasoning);
       const body = encodeConnectBinaryRequest(requestBytes);
       const url = buildUpstreamUrl();
 

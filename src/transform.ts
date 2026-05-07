@@ -6,6 +6,7 @@ import {
   type Context,
   type Message,
   type Model,
+  type ThinkingLevel,
   type Tool,
   type ToolCall,
 } from "@mariozechner/pi-ai";
@@ -96,19 +97,31 @@ export const WINDSURF_MODELS = [
   },
 ];
 
+const REASONING_SUFFIX_MAP: Partial<Record<ThinkingLevel, string>> = {
+  "minimal": "-low",
+  "low": "-low",
+  "medium": "",
+  "high": "-high",
+  "xhigh": "-xhigh",
+};
+
 export function buildGetChatMessageRequest(
   model: Model<Api>,
   context: Context,
   metadataBytes: Uint8Array,
   conversationId: string,
+  reasoning?: ThinkingLevel,
 ): Uint8Array {
   const internalModel = DIRECT_MODEL_MAP[model.id];
-  const internalModelUid = DIRECT_MODEL_UID_MAP[model.id];
-  if (!internalModel && !internalModelUid) {
+  const baseUid = DIRECT_MODEL_UID_MAP[model.id];
+  if (!internalModel && !baseUid) {
     throw new Error(`Unsupported Windsurf model: ${model.id}`);
   }
 
   const isInternal = !!internalModel;
+  const internalModelUid = !isInternal && baseUid
+    ? applyReasoningVariant(baseUid, reasoning)
+    : undefined;
 
   const parts: Uint8Array[] = [
     encodeMessageField(1, metadataBytes),
@@ -391,6 +404,20 @@ function buildEnterpriseChatModelConfig(model: Model<Api>): Uint8Array {
     encodeVarintField(2, maxOutput),
     encodeVarintField(3, maxInput),
   );
+}
+
+function applyReasoningVariant(baseUid: string, reasoning?: ThinkingLevel): string {
+  if (!reasoning) {
+    return baseUid;
+  }
+  const suffix = REASONING_SUFFIX_MAP[reasoning];
+  if (suffix === undefined) {
+    return baseUid;
+  }
+  if (suffix === "") {
+    return baseUid;
+  }
+  return `${baseUid}${suffix}`;
 }
 
 function extractAssistantToolCalls(content: Message["content"]): ToolCall[] {
