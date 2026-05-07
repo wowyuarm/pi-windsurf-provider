@@ -36,6 +36,20 @@ Claude model parameters mirror Pi's native Anthropic model defaults:
 - contextWindow: 1M, maxTokens: 128K
 - cost: $5/M input, $25/M output
 
+### Reasoning (thinking budget) mapping
+
+Pi's `reasoning` level maps to Windsurf model UID variants:
+
+| Pi reasoning | Windsurf UID suffix |
+|-------------|---------------------|
+| `minimal` / `low` | `-low` |
+| `medium` (default) | (base UID) |
+| `high` | `-high` |
+| `xhigh` | `-xhigh` |
+
+Example: `claude-opus-4-7` with `reasoning: "xhigh"` → Windsurf UID `claude-opus-4-7-xhigh`.
+Internal models (swe-1.6) are unaffected by reasoning level.
+
 ## Install
 
 Local dev:
