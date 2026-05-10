@@ -16,7 +16,7 @@ Pi extension that exposes Windsurf upstream as Pi model provider `windsurf`.
 windsurf/swe-1.6                   Codeium internal model (enum 420)
 windsurf/swe-1.6-fast              Codeium internal model fast variant (enum 421)
 windsurf/claude-opus-4-7           Claude Opus 4.7 via Windsurf
-windsurf/claude-opus-4-6-thinking   Claude Opus 4.6 Thinking via Windsurf
+windsurf/claude-opus-4-6           Claude Opus 4.6 via Windsurf (auto thinking)
 ```
 
 ### Model routing
@@ -37,18 +37,31 @@ Claude model parameters mirror Pi's native Anthropic model defaults:
 - contextWindow: 1M, maxTokens: 128K
 - cost: $5/M input, $25/M output
 
-### Reasoning (thinking budget) mapping
+### Reasoning (thinking) mapping
 
-Pi's `reasoning` level maps to Windsurf model UID variants:
+Windsurf upstream is strict about which (UID, reasoning-suffix) combinations it
+accepts. Pi's `reasoning` level is translated separately for each model:
 
-| Pi reasoning | Windsurf UID suffix |
-|-------------|---------------------|
-| `minimal` / `low` | `-low` |
-| `medium` (default) | (base UID) |
-| `high` | `-high` |
-| `xhigh` | `-xhigh` |
+**`claude-opus-4-7`** — every level uses an explicit suffixed UID; bare UID is rejected.
 
-Example: `claude-opus-4-7` with `reasoning: "xhigh"` → Windsurf UID `claude-opus-4-7-xhigh`.
+| Pi reasoning      | Windsurf UID                |
+|-------------------|-----------------------------|
+| `minimal` / `low` | `claude-opus-4-7-low`       |
+| `medium`          | `claude-opus-4-7-medium`    |
+| `high` (default)  | `claude-opus-4-7-high`      |
+| `xhigh`           | `claude-opus-4-7-xhigh`     |
+
+**`claude-opus-4-6`** — only the bare UID and the dedicated `-thinking` UID are
+accepted; reasoning suffixes are rejected. Pi's reasoning level is mapped to a
+thinking on/off switch.
+
+| Pi reasoning      | Windsurf UID                  |
+|-------------------|-------------------------------|
+| `minimal` / `low` | `claude-opus-4-6`             |
+| `medium`          | `claude-opus-4-6-thinking`    |
+| `high` (default)  | `claude-opus-4-6-thinking`    |
+| `xhigh`           | `claude-opus-4-6-thinking`    |
+
 Internal models (swe-1.6) are unaffected by reasoning level.
 
 ## Install
@@ -82,7 +95,7 @@ pi -e /absolute/path/to/pi-windsurf-provider --list-models windsurf
 Run:
 
 ```bash
-pi -e /absolute/path/to/pi-windsurf-provider --provider windsurf --model claude-opus-4.6-thinking -p --no-session "Say OK in one word"
+pi -e /absolute/path/to/pi-windsurf-provider --provider windsurf --model claude-opus-4-6 -p --no-session "Say OK in one word"
 ```
 
 ## Requirements

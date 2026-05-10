@@ -52,9 +52,44 @@ const DIRECT_MODEL_MAP: Record<string, number> = {
   "swe-1.6-fast": 421,
 };
 
-const DIRECT_MODEL_UID_MAP: Record<string, string> = {
-  "claude-opus-4-7": "claude-opus-4-7",
-  "claude-opus-4-6-thinking": "claude-opus-4-6-thinking",
+// External chat_model_uid resolution.
+// Windsurf upstream is picky about which (uid, reasoning-suffix) pairs it accepts:
+//   claude-opus-4-7   : ONLY -low / -medium / -high / -xhigh (no bare uid)
+//   claude-opus-4-6   : ONLY the bare uid; reasoning is expressed by switching
+//                       to the separate -thinking variant, NOT by suffix.
+function resolveExternalModelUid(
+  modelId: string,
+  reasoning?: ThinkingLevel,
+): string | undefined {
+  if (modelId === "claude-opus-4-7") {
+    const suffix = OPUS_4_7_REASONING_SUFFIX[reasoning ?? "high"] ?? "-high";
+    return `claude-opus-4-7${suffix}`;
+  }
+  if (modelId === "claude-opus-4-6") {
+    return OPUS_4_6_USE_THINKING[reasoning ?? "high"]
+      ? "claude-opus-4-6-thinking"
+      : "claude-opus-4-6";
+  }
+  return undefined;
+}
+
+// 4.7: every reasoning level maps to an explicit suffixed UID. Bare uid is rejected.
+const OPUS_4_7_REASONING_SUFFIX: Record<ThinkingLevel, string> = {
+  minimal: "-low",
+  low: "-low",
+  medium: "-medium",
+  high: "-high",
+  xhigh: "-xhigh",
+};
+
+// 4.6: low-effort thinking levels stay on the non-thinking model;
+// medium and above switch to the dedicated -thinking model.
+const OPUS_4_6_USE_THINKING: Record<ThinkingLevel, boolean> = {
+  minimal: false,
+  low: false,
+  medium: true,
+  high: true,
+  xhigh: true,
 };
 
 export interface StreamState {
@@ -97,8 +132,8 @@ export const WINDSURF_MODELS = [
     maxTokens: 128000,
   },
   {
-    id: "claude-opus-4-6-thinking",
-    name: "Claude Opus 4.6 Thinking",
+    id: "claude-opus-4-6",
+    name: "Claude Opus 4.6",
     reasoning: true,
     input: ["text"] as Array<"text">,
     cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
@@ -106,14 +141,6 @@ export const WINDSURF_MODELS = [
     maxTokens: 128000,
   },
 ];
-
-const REASONING_SUFFIX_MAP: Partial<Record<ThinkingLevel, string>> = {
-  "minimal": "-low",
-  "low": "-low",
-  "medium": "",
-  "high": "-high",
-  "xhigh": "-xhigh",
-};
 
 export function buildGetChatMessageRequest(
   model: Model<Api>,
@@ -123,15 +150,12 @@ export function buildGetChatMessageRequest(
   reasoning?: ThinkingLevel,
 ): Uint8Array {
   const internalModel = DIRECT_MODEL_MAP[model.id];
-  const baseUid = DIRECT_MODEL_UID_MAP[model.id];
-  if (!internalModel && !baseUid) {
+  const externalUid = internalModel ? undefined : resolveExternalModelUid(model.id, reasoning);
+  if (!internalModel && !externalUid) {
     throw new Error(`Unsupported Windsurf model: ${model.id}`);
   }
 
   const isInternal = !!internalModel;
-  const internalModelUid = !isInternal && baseUid
-    ? applyReasoningVariant(baseUid, reasoning)
-    : undefined;
 
   const parts: Uint8Array[] = [
     encodeMessageField(1, metadataBytes),
@@ -139,7 +163,7 @@ export function buildGetChatMessageRequest(
     ...convertMessages(context.messages).map((message) => encodeMessageField(3, message)),
     encodeVarintField(5, isInternal ? 1 : 0),
     ...(isInternal ? [encodeVarintField(6, internalModel)] : []),
-    ...(!isInternal && internalModelUid ? [encodeStringField(21, internalModelUid)] : []),
+    ...(!isInternal && externalUid ? [encodeStringField(21, externalUid)] : []),
     encodeVarintField(7, REQUEST_TYPE_GENERAL),
     encodeMessageField(8, buildCompletionConfiguration(model)),
     ...convertTools(context.tools ?? []).map((tool) => encodeMessageField(10, tool)),
@@ -414,20 +438,6 @@ function buildEnterpriseChatModelConfig(model: Model<Api>): Uint8Array {
     encodeVarintField(2, maxOutput),
     encodeVarintField(3, maxInput),
   );
-}
-
-function applyReasoningVariant(baseUid: string, reasoning?: ThinkingLevel): string {
-  if (!reasoning) {
-    return baseUid;
-  }
-  const suffix = REASONING_SUFFIX_MAP[reasoning];
-  if (suffix === undefined) {
-    return baseUid;
-  }
-  if (suffix === "") {
-    return baseUid;
-  }
-  return `${baseUid}${suffix}`;
 }
 
 function extractAssistantToolCalls(content: Message["content"]): ToolCall[] {
