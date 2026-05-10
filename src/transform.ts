@@ -47,16 +47,22 @@ const TOOL_READ_ONLY_HINT_NAMES = new Set([
   "grep",
 ]);
 
-const DIRECT_MODEL_MAP: Record<string, number> = {
-  "swe-1.6": 420,
-  "swe-1.6-fast": 421,
-};
-
+// All Windsurf models we expose are now selected via the external chat_model_uid
+// path (request field 21), with use_internal_chat_model=false.
+//
+// SWE-1.6 used to be selected via the internal chat-model enum (field 6 = 420/421),
+// but upstream now rejects those enum values with "internal error". The current
+// SWE path uses the same external uid mechanism as Claude, with hyphenated
+// identifiers ("swe-1-6", "swe-1-6-fast"). The dotted forms "swe-1.6" /
+// "swe-1.6-fast" are rejected by the server.
+//
 // External chat_model_uid resolution.
 // Windsurf upstream is picky about which (uid, reasoning-suffix) pairs it accepts:
 //   claude-opus-4-7   : ONLY -low / -medium / -high / -xhigh (no bare uid)
 //   claude-opus-4-6   : ONLY the bare uid; reasoning is expressed by switching
 //                       to the separate -thinking variant, NOT by suffix.
+//   swe-1-6 / swe-1-6-fast : ONLY the bare uid; any -low/-medium/-high suffix
+//                            is rejected.
 function resolveExternalModelUid(
   modelId: string,
   reasoning?: ThinkingLevel,
@@ -70,6 +76,8 @@ function resolveExternalModelUid(
       ? "claude-opus-4-6-thinking"
       : "claude-opus-4-6";
   }
+  if (modelId === "swe-1.6") return "swe-1-6";
+  if (modelId === "swe-1.6-fast") return "swe-1-6-fast";
   return undefined;
 }
 
@@ -107,7 +115,7 @@ export const WINDSURF_MODELS = [
   {
     id: "swe-1.6",
     name: "SWE-1.6",
-    reasoning: true,
+    reasoning: false,
     input: ["text"] as Array<"text">,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 200000,
@@ -116,7 +124,7 @@ export const WINDSURF_MODELS = [
   {
     id: "swe-1.6-fast",
     name: "SWE-1.6 Fast",
-    reasoning: true,
+    reasoning: false,
     input: ["text"] as Array<"text">,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 200000,
@@ -149,25 +157,21 @@ export function buildGetChatMessageRequest(
   conversationId: string,
   reasoning?: ThinkingLevel,
 ): Uint8Array {
-  const internalModel = DIRECT_MODEL_MAP[model.id];
-  const externalUid = internalModel ? undefined : resolveExternalModelUid(model.id, reasoning);
-  if (!internalModel && !externalUid) {
+  const externalUid = resolveExternalModelUid(model.id, reasoning);
+  if (!externalUid) {
     throw new Error(`Unsupported Windsurf model: ${model.id}`);
   }
-
-  const isInternal = !!internalModel;
 
   const parts: Uint8Array[] = [
     encodeMessageField(1, metadataBytes),
     encodeStringField(2, buildSystemPrompt(context)),
     ...convertMessages(context.messages).map((message) => encodeMessageField(3, message)),
-    encodeVarintField(5, isInternal ? 1 : 0),
-    ...(isInternal ? [encodeVarintField(6, internalModel)] : []),
-    ...(!isInternal && externalUid ? [encodeStringField(21, externalUid)] : []),
+    encodeVarintField(5, 0),
+    encodeStringField(21, externalUid),
     encodeVarintField(7, REQUEST_TYPE_GENERAL),
     encodeMessageField(8, buildCompletionConfiguration(model)),
     ...convertTools(context.tools ?? []).map((tool) => encodeMessageField(10, tool)),
-    ...(!isInternal ? [encodeMessageField(15, buildEnterpriseChatModelConfig(model))] : []),
+    encodeMessageField(15, buildEnterpriseChatModelConfig(model)),
     encodeStringField(16, conversationId),
     encodeVarintField(20, PLANNER_MODE_DEFAULT),
   ];

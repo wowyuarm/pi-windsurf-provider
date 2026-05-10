@@ -13,25 +13,27 @@ Pi extension that exposes Windsurf upstream as Pi model provider `windsurf`.
 ## Models
 
 ```text
-windsurf/swe-1.6                   Codeium internal model (enum 420)
-windsurf/swe-1.6-fast              Codeium internal model fast variant (enum 421)
+windsurf/swe-1.6                   Cognition SWE-1.6 (uid "swe-1-6")
+windsurf/swe-1.6-fast              Cognition SWE-1.6 Fast (uid "swe-1-6-fast")
 windsurf/claude-opus-4-7           Claude Opus 4.7 via Windsurf
 windsurf/claude-opus-4-6           Claude Opus 4.6 via Windsurf (auto thinking)
 ```
 
 ### Model routing
 
-Windsurf upstream `GetChatMessageRequest` uses three fields for model selection:
+Windsurf upstream `GetChatMessageRequest` selects models by external
+`chat_model_uid` (field 21), with `use_internal_chat_model=false`:
 
-| Field | Name | Type | Internal | External |
-|-------|------|------|----------|----------|
-| 5 | `use_internal_chat_model` | bool | `1` | `0` |
-| 6 | `internal_chat_model` | enum | model enum | (absent) |
-| 21 | `chat_model_uid` | string | (absent) | model UID |
-| 15 | `enterprise_chat_model_config` | message | (absent) | max tokens |
+| Field | Name | Type | Value |
+|-------|------|------|-------|
+| 5 | `use_internal_chat_model` | bool | `0` |
+| 21 | `chat_model_uid` | string | resolved per-model UID |
+| 15 | `enterprise_chat_model_config` | message | max tokens / context window |
 
-- Internal models (SWE-1.6): field 5=true, field 6=enum_value
-- External models (Claude Opus): field 5=false, field 21=model_uid, field 15=token config
+The internal-enum path (field 6) is no longer used: SWE-1.6's old enum values
+(420/421) are rejected by upstream as "internal error". The current SWE UIDs
+are hyphenated (`swe-1-6`, `swe-1-6-fast`); the dotted forms `swe-1.6` /
+`swe-1.6-fast` are not accepted.
 
 Claude model parameters mirror Pi's native Anthropic model defaults:
 - contextWindow: 1M, maxTokens: 128K
@@ -62,7 +64,8 @@ thinking on/off switch.
 | `high` (default)  | `claude-opus-4-6-thinking`    |
 | `xhigh`           | `claude-opus-4-6-thinking`    |
 
-Internal models (swe-1.6) are unaffected by reasoning level.
+**`swe-1.6` / `swe-1.6-fast`** — only the bare UID is accepted; reasoning suffixes
+are rejected. The reasoning level Pi passes is currently ignored for these models.
 
 ## Install
 
