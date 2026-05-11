@@ -168,7 +168,9 @@ function hasStreamedOutput(state: StreamState): boolean {
 }
 
 function isRecoverableAccountError(error: unknown): boolean {
-  return isAccountQuotaError(error) || isAccountVersionRejectedError(error);
+  return isAccountQuotaError(error)
+    || isAccountVersionRejectedError(error)
+    || isAccountServerTransientError(error);
 }
 
 /**
@@ -200,6 +202,16 @@ function isAccountVersionRejectedError(error: unknown): boolean {
   return message.includes("failed_precondition")
     && message.includes("windsurf version")
     && message.includes("out of date");
+}
+
+/**
+ * Windsurf server sometimes returns invalid_argument with "an internal error occurred"
+ * for transient server-side issues. Treat as recoverable so we skip to the next account.
+ */
+function isAccountServerTransientError(error: unknown): boolean {
+  const message = errorToMessage(error).toLowerCase();
+  return message.includes("invalid_argument")
+    && message.includes("internal error occurred");
 }
 
 function errorToMessage(error: unknown): string {
