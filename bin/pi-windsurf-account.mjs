@@ -27,7 +27,7 @@ try {
       addCurrent();
       break;
     case "list":
-      listAccounts();
+      await listAccounts();
       break;
     case "remove":
     case "rm":
@@ -78,7 +78,7 @@ function addCurrent() {
   console.log(file);
 }
 
-function listAccounts() {
+async function listAccounts() {
   const file = accountsFilePath();
   const payload = readAccountsFile(file);
   if (payload.accounts.length === 0) {
@@ -86,14 +86,25 @@ function listAccounts() {
     return;
   }
 
+  const showUsage = !hasFlag("--no-usage");
+  const usageByHash = new Map();
+  if (showUsage) {
+    const results = await Promise.all(payload.accounts.map(async (account) => [hashKey(account.apiKey), await fetchUsageSummary(account)]));
+    for (const [hash, usage] of results) {
+      usageByHash.set(hash, usage);
+    }
+  }
+
   for (const account of payload.accounts) {
     const flags = [];
     if (account.disabled === true) flags.push("disabled");
+    const hash = hashKey(account.apiKey);
     console.log([
       account.name ?? "(no name)",
       account.email ?? "-",
       account.apiServerUrl ?? "-",
-      hashKey(account.apiKey),
+      hash,
+      showUsage ? usageByHash.get(hash) ?? "usage: unknown" : undefined,
       flags.join(","),
     ].filter(Boolean).join("\t"));
   }
@@ -190,6 +201,99 @@ function readStateDatabaseJson(path, key) {
   }
 }
 
+async function fetchUsageSummary(account) {
+  try {
+    const response = await fetch("https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": "1",
+      },
+      body: JSON.stringify({
+        metadata: {
+          apiKey: account.apiKey,
+          ideName: "windsurf",
+          ideVersion: "0.0.0",
+          extensionName: "windsurf",
+          extensionVersion: "0.0.0",
+          locale: "en",
+        },
+      }),
+      signal: AbortSignal.timeout(readUsageTimeoutMs()),
+    });
+
+    if (!response.ok) {
+      return `usage: HTTP ${response.status}`;
+    }
+
+    const payload = await response.json();
+    return formatUsageSummary(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `usage: ${message.split("\n")[0].slice(0, 80)}`;
+  }
+}
+
+function formatUsageSummary(payload) {
+  const userStatus = payload?.userStatus;
+  const planStatus = userStatus?.planStatus;
+  const planInfo = planStatus?.planInfo;
+  const planName = typeof planInfo?.planName === "string" ? planInfo.planName : "plan unknown";
+
+  const promptTotal = firstNumber(planStatus?.availablePromptCredits, planInfo?.monthlyPromptCredits);
+  const promptUsed = numberOrZero(planStatus?.usedPromptCredits);
+  const flexUsed = numberOrZero(planStatus?.usedFlexCredits);
+  const flexTotal = firstNumber(planInfo?.monthlyFlexCreditPurchaseAmount, planStatus?.availableFlexCredits !== undefined ? numberOrZero(planStatus.availableFlexCredits) + flexUsed : undefined);
+
+  const parts = [planName];
+  if (promptTotal !== undefined) {
+    parts.push(`prompt ${formatCredit(promptUsed)}/${formatCredit(promptTotal)}`);
+  }
+  if (flexTotal !== undefined) {
+    parts.push(`flex ${formatCredit(flexUsed)}/${formatCredit(flexTotal)}`);
+  }
+  if (typeof planStatus?.planEnd === "string") {
+    parts.push(`reset ${planStatus.planEnd.slice(0, 10)}`);
+  }
+  return parts.join(" ");
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const parsed = parseCreditNumber(value);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function numberOrZero(value) {
+  return parseCreditNumber(value) ?? 0;
+}
+
+function parseCreditNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function formatCredit(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function readUsageTimeoutMs() {
+  const raw = process.env.PI_WINDSURF_USAGE_TIMEOUT_MS;
+  if (!raw) return 10000;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
+}
+
 function stateDatabaseCandidates() {
   const candidates = [join(homedir(), ".windsurf-server", "data", "User", "globalStorage", "state.vscdb")];
   const usersRoot = "/mnt/c/Users";
@@ -246,6 +350,10 @@ function readFlag(name) {
   return value && !value.startsWith("-") ? value : undefined;
 }
 
+function hasFlag(name) {
+  return args.includes(name);
+}
+
 function hashKey(apiKey) {
   return createHash("sha256").update(apiKey).digest("hex").slice(0, 12);
 }
@@ -259,7 +367,7 @@ function expandHome(value) {
 function printHelp() {
   console.log(`Usage:
   pi-windsurf-account add-current --name <name> [--file <path>]
-  pi-windsurf-account list [--file <path>]
+  pi-windsurf-account list [--file <path>] [--no-usage]
   pi-windsurf-account remove <name> [--file <path>]
   pi-windsurf-account state
   pi-windsurf-account clear-state

@@ -139,15 +139,18 @@ Workflow inside Pi:
 # 2. Switch/login to Windsurf account B in the app.
 /windsurf-account add-current --name ws-b
 
-# 3. Check saved accounts.
+# 3. Check saved accounts and current usage.
 /windsurf-account list
 ```
+
+`list` calls Windsurf `GetUserStatus` for each saved account and shows plan + credits. Use `--no-usage` for a local-only list.
 
 The same commands are available from shell if `pi-windsurf-account` is on `PATH`:
 
 ```bash
 pi-windsurf-account add-current --name ws-a
 pi-windsurf-account list
+pi-windsurf-account list --no-usage
 ```
 
 Useful commands:
@@ -174,6 +177,7 @@ If the account pool exists and has accounts, the provider uses the pool. If it d
 - `PI_WINDSURF_ACCOUNTS_FILE`
 - `PI_WINDSURF_ACCOUNT_STATE_FILE`
 - `PI_WINDSURF_ACCOUNT_COOLDOWN_MS`
+- `PI_WINDSURF_USAGE_TIMEOUT_MS`
 - `PI_WINDSURF_PROVIDER_URL`
 - `PI_WINDSURF_PROVIDER_DEBUG=1`
 
