@@ -241,8 +241,8 @@ function formatUsageSummary(payload, verbose = false) {
   const planInfo = planStatus?.planInfo;
   const planName = typeof planInfo?.planName === "string" ? planInfo.planName : "plan unknown";
 
-  const dailyRemaining = parseCreditNumber(planStatus?.dailyQuotaRemainingPercent);
-  const weeklyRemaining = parseCreditNumber(planStatus?.weeklyQuotaRemainingPercent);
+  const dailyRemaining = parseQuotaPercent(planStatus, "dailyQuotaRemainingPercent", "dailyQuotaResetAtUnix");
+  const weeklyRemaining = parseQuotaPercent(planStatus, "weeklyQuotaRemainingPercent", "weeklyQuotaResetAtUnix");
   const promptTotal = firstNumber(planInfo?.monthlyPromptCredits, planStatus?.availablePromptCredits);
   const flexRemaining = parseCreditNumber(planStatus?.availableFlexCredits);
   const flexUsed = parseCreditNumber(planStatus?.usedFlexCredits);
@@ -278,6 +278,14 @@ function firstNumber(...values) {
 
 function numberOrZero(value) {
   return parseCreditNumber(value) ?? 0;
+}
+
+function parseQuotaPercent(planStatus, quotaKey, resetKey) {
+  const parsed = parseCreditNumber(planStatus?.[quotaKey]);
+  if (parsed !== undefined) {
+    return parsed;
+  }
+  return planStatus?.[resetKey] !== undefined ? 0 : undefined;
 }
 
 function parseCreditNumber(value) {

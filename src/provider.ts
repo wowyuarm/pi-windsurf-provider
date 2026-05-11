@@ -78,9 +78,9 @@ function streamWindsurf(
           if (options?.signal?.aborted === true) {
             throw error;
           }
-          if (!hasStreamedOutput(state) && isQuotaExhaustedError(error)) {
+          if (!hasStreamedOutput(state) && isRecoverableAccountError(error)) {
             markAccountExhausted(account, errorToMessage(error));
-            debugLog("account_exhausted", {
+            debugLog("account_unavailable", {
               account: describeAccount(account),
               error: errorToMessage(error),
             });
@@ -90,7 +90,7 @@ function streamWindsurf(
         }
       }
 
-      throw new Error(`All available Windsurf accounts failed with usage/quota errors. Last error: ${errorToMessage(lastError)}`);
+      throw new Error(`All available Windsurf accounts failed with recoverable account errors. Last error: ${errorToMessage(lastError)}`);
     } catch (error) {
       failStream(state, stream, error, options?.signal?.aborted === true);
       stream.end();
@@ -167,6 +167,10 @@ function hasStreamedOutput(state: StreamState): boolean {
   return state.output.content.length > 0;
 }
 
+function isRecoverableAccountError(error: unknown): boolean {
+  return isQuotaExhaustedError(error) || isAccountVersionRejectedError(error);
+}
+
 function isQuotaExhaustedError(error: unknown): boolean {
   const message = errorToMessage(error).toLowerCase();
   return [
@@ -181,6 +185,13 @@ function isQuotaExhaustedError(error: unknown): boolean {
     "quota_exceeded",
     "quota exhausted",
   ].some((fragment) => message.includes(fragment));
+}
+
+function isAccountVersionRejectedError(error: unknown): boolean {
+  const message = errorToMessage(error).toLowerCase();
+  return message.includes("failed_precondition")
+    && message.includes("windsurf version")
+    && message.includes("out of date");
 }
 
 function errorToMessage(error: unknown): string {
