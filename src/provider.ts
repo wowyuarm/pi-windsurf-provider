@@ -168,11 +168,19 @@ function hasStreamedOutput(state: StreamState): boolean {
 }
 
 function isRecoverableAccountError(error: unknown): boolean {
-  return isQuotaExhaustedError(error) || isAccountVersionRejectedError(error);
+  return isAccountQuotaError(error) || isAccountVersionRejectedError(error);
 }
 
-function isQuotaExhaustedError(error: unknown): boolean {
+/**
+ * Check if the error is a quota/usage issue specific to this account.
+ * Excludes upstream-provider-level resource exhaustion ("third-party model provider is experiencing issues"),
+ * which affects all accounts and is not recoverable by switching accounts.
+ */
+function isAccountQuotaError(error: unknown): boolean {
   const message = errorToMessage(error).toLowerCase();
+  if (message.includes("third-party model provider is experiencing issues")) {
+    return false;
+  }
   return [
     "resource_exhausted",
     "quota",
