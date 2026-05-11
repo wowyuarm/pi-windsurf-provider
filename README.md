@@ -112,6 +112,8 @@ Default setup uses your existing local Windsurf credentials. It does not need lo
 Reads existing Windsurf account data from:
 
 - `~/.windsurf-server/data/User/globalStorage/**/accounts.json`
+- `~/.windsurf-server/data/User/globalStorage/state.vscdb`
+- WSL Windows install: `/mnt/c/Users/*/AppData/Roaming/Windsurf/User/globalStorage/state.vscdb`
 
 In plain words:
 
@@ -119,12 +121,59 @@ In plain words:
 - yes, you need to have logged in already
 - yes, this extension uses that local existing credential state
 
+## Multiple accounts
+
+You can save several already-logged-in Windsurf accounts into a local account pool. The provider keeps using the last successful account, and only switches when Windsurf returns a usage/quota-style error before any answer text has streamed.
+
+Default files:
+
+- accounts: `~/.config/pi-windsurf-provider/accounts.json`
+- switch state: `~/.local/state/pi-windsurf-provider/account-state.json`
+
+Workflow inside Pi:
+
+```text
+# 1. Log in to Windsurf account A in the Windsurf app.
+/windsurf-account add-current --name ws-a
+
+# 2. Switch/login to Windsurf account B in the app.
+/windsurf-account add-current --name ws-b
+
+# 3. Check saved accounts.
+/windsurf-account list
+```
+
+The same commands are available from shell if `pi-windsurf-account` is on `PATH`:
+
+```bash
+pi-windsurf-account add-current --name ws-a
+pi-windsurf-account list
+```
+
+Useful commands:
+
+```text
+/windsurf-account remove ws-a
+/windsurf-account state
+/windsurf-account clear-state
+/windsurf-account where
+```
+
+Shell equivalents use the same arguments with `pi-windsurf-account`.
+
+The account file is written with `0600` permissions. It contains Windsurf API keys, so do not commit or share it.
+
+If the account pool exists and has accounts, the provider uses the pool. If it does not exist or is empty, it falls back to the current local Windsurf login as before.
+
 ## Optional env
 
 - `WINDSURF_METADATA_API_KEY`
 - `WINDSURF_API_KEY`
 - `WINDSURF_API_SERVER_URL`
 - `WINDSURF_STATE_DIR`
+- `PI_WINDSURF_ACCOUNTS_FILE`
+- `PI_WINDSURF_ACCOUNT_STATE_FILE`
+- `PI_WINDSURF_ACCOUNT_COOLDOWN_MS`
 - `PI_WINDSURF_PROVIDER_URL`
 - `PI_WINDSURF_PROVIDER_DEBUG=1`
 

@@ -14,7 +14,8 @@ import {
   parseTrailerError,
   readResponseError,
 } from "./connect.ts";
-import { buildRequestMetadataBytes, discoverApiServerBaseUrl } from "./metadata.ts";
+import { markAccountExhausted, markAccountSuccessful, orderAccountsForAttempt } from "./account-state.ts";
+import { buildRequestMetadataBytes, loadWindsurfAccounts, type WindsurfAccountCredentials } from "./metadata.ts";
 import {
   applyResponseFrame,
   buildGetChatMessageRequest,
@@ -22,6 +23,7 @@ import {
   failStream,
   finalizeStream,
   getOrCreateConversationId,
+  type StreamState,
   WINDSURF_MODELS,
 } from "./transform.ts";
 
@@ -54,43 +56,41 @@ function streamWindsurf(
     stream.push({ type: "start", partial: state.output });
 
     try {
-      const metadataBytes = await buildRequestMetadataBytes(conversationId);
-      const requestBytes = buildGetChatMessageRequest(model, context, metadataBytes, conversationId, options?.reasoning);
-      const body = encodeConnectBinaryRequest(requestBytes);
-      const url = buildUpstreamUrl();
-
-      debugLog("request", {
-        model: model.id,
-        url,
-        messages: context.messages.length,
-        tools: (context.tools ?? []).length,
-        tail: summarizeContextTail(context),
-      });
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: createUpstreamHeaders(),
-        body: toArrayBuffer(body),
-        signal: options?.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(await readResponseError(response));
+      const allAccounts = loadWindsurfAccounts();
+      const accounts = orderAccountsForAttempt(allAccounts);
+      if (allAccounts.length === 0) {
+        throw new Error("No Windsurf account found. Log in to Windsurf once, or run pi-windsurf-account add-current after logging in.");
+      }
+      if (accounts.length === 0) {
+        throw new Error("All configured Windsurf accounts are cooling down after usage/quota errors. Add another account or clear state with pi-windsurf-account clear-state.");
       }
 
-      for await (const frame of decodeConnectBinaryFrames(response.body)) {
-        const trailerError = parseTrailerError(frame);
-        if (trailerError) {
-          if (trailerError === "{}") {
+      let lastError: unknown;
+      for (const account of accounts) {
+        try {
+          await runWindsurfAttempt(account, model, context, options, conversationId, state, stream);
+          markAccountSuccessful(account);
+          finalizeStream(state, stream);
+          stream.end();
+          return;
+        } catch (error) {
+          lastError = error;
+          if (options?.signal?.aborted === true) {
+            throw error;
+          }
+          if (!hasStreamedOutput(state) && isQuotaExhaustedError(error)) {
+            markAccountExhausted(account, errorToMessage(error));
+            debugLog("account_exhausted", {
+              account: describeAccount(account),
+              error: errorToMessage(error),
+            });
             continue;
           }
-          throw new Error(trailerError);
+          throw error;
         }
-        applyResponseFrame(model, frame.payload, state, stream);
       }
 
-      finalizeStream(state, stream);
-      stream.end();
+      throw new Error(`All available Windsurf accounts failed with usage/quota errors. Last error: ${errorToMessage(lastError)}`);
     } catch (error) {
       failStream(state, stream, error, options?.signal?.aborted === true);
       stream.end();
@@ -100,22 +100,95 @@ function streamWindsurf(
   return stream;
 }
 
+async function runWindsurfAttempt(
+  account: WindsurfAccountCredentials,
+  model: Model<Api>,
+  context: Context,
+  options: SimpleStreamOptions | undefined,
+  conversationId: string,
+  state: StreamState,
+  stream: AssistantMessageEventStream,
+): Promise<void> {
+  const metadataBytes = await buildRequestMetadataBytes(conversationId, account);
+  const requestBytes = buildGetChatMessageRequest(model, context, metadataBytes, conversationId, options?.reasoning);
+  const body = encodeConnectBinaryRequest(requestBytes);
+  const url = buildUpstreamUrl(account);
+
+  debugLog("request", {
+    account: describeAccount(account),
+    model: model.id,
+    url,
+    messages: context.messages.length,
+    tools: (context.tools ?? []).length,
+    tail: summarizeContextTail(context),
+  });
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: createUpstreamHeaders(),
+    body: toArrayBuffer(body),
+    signal: options?.signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await readResponseError(response));
+  }
+
+  for await (const frame of decodeConnectBinaryFrames(response.body)) {
+    const trailerError = parseTrailerError(frame);
+    if (trailerError) {
+      if (trailerError === "{}") {
+        continue;
+      }
+      throw new Error(trailerError);
+    }
+    applyResponseFrame(model, frame.payload, state, stream);
+  }
+}
+
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   return copy.buffer;
 }
 
-function buildUpstreamUrl(): string {
+function buildUpstreamUrl(account: WindsurfAccountCredentials): string {
   const value = process.env.PI_WINDSURF_PROVIDER_URL?.trim();
   if (value) {
     return value;
   }
-  const discoveredBaseUrl = discoverApiServerBaseUrl();
-  if (discoveredBaseUrl) {
-    return `${discoveredBaseUrl}${DEFAULT_ENDPOINT}`;
+  if (account.apiServerUrl) {
+    return `${account.apiServerUrl}${DEFAULT_ENDPOINT}`;
   }
   return `${DEFAULT_BASE_URL}${DEFAULT_ENDPOINT}`;
+}
+
+function hasStreamedOutput(state: StreamState): boolean {
+  return state.output.content.length > 0;
+}
+
+function isQuotaExhaustedError(error: unknown): boolean {
+  const message = errorToMessage(error).toLowerCase();
+  return [
+    "resource_exhausted",
+    "quota",
+    "usage limit",
+    "usage exceeded",
+    "usage exhausted",
+    "limit exceeded",
+    "credits exhausted",
+    "insufficient credits",
+    "quota_exceeded",
+    "quota exhausted",
+  ].some((fragment) => message.includes(fragment));
+}
+
+function errorToMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function describeAccount(account: WindsurfAccountCredentials): string {
+  return account.name ?? account.email ?? `${account.source}:${account.id}`;
 }
 
 function summarizeContextTail(context: Context): unknown[] {

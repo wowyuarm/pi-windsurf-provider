@@ -1,6 +1,6 @@
 {
   "name": "pi-extension-windsurf-provider",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Pi extension that exposes Windsurf upstream as a custom SWE-1.6 provider.",
   "keywords": [
     "pi-package",
@@ -15,11 +15,16 @@
     "index.ts",
     "README.md",
     "LICENSE",
-    "src"
+    "src",
+    "bin"
   ],
+  "bin": {
+    "pi-windsurf-account": "./bin/pi-windsurf-account.mjs"
+  },
   "scripts": {
     "check": "tsc --noEmit",
-    "smoke:list-models": "pi -e . --list-models windsurf"
+    "smoke:list-models": "pi -e . --list-models windsurf",
+    "smoke:account-cli": "node bin/pi-windsurf-account.mjs where"
   },
   "pi": {
     "extensions": [

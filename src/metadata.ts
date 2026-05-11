@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { arch, cpus, homedir, hostname, platform, release, userInfo, version } from "node:os";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
+import { getAccountId } from "./account-state.ts";
 import {
   concatBytes,
   decodeProtoFields,
@@ -22,6 +23,7 @@ const DEFAULT_EXTENSION_VERSION = "0.2.0";
 const DEFAULT_LOCALE = "en";
 const DEFAULT_OS = "linux";
 const ACCOUNTS_FILE_NAME = "accounts.json";
+const DEFAULT_ACCOUNT_POOL_FILE = "~/.config/pi-windsurf-provider/accounts.json";
 const USER_JWT_CACHE_MS = 5 * 60 * 1000;
 
 export interface WindsurfMetadataConfig {
@@ -35,9 +37,22 @@ export interface WindsurfMetadataConfig {
 }
 
 interface AccountRecord {
+  name?: unknown;
+  email?: unknown;
   apiKey?: unknown;
   apiServerUrl?: unknown;
   isActive?: unknown;
+  disabled?: unknown;
+  source?: unknown;
+}
+
+export interface WindsurfAccountCredentials {
+  id: string;
+  name?: string;
+  email?: string;
+  apiKey: string;
+  apiServerUrl?: string;
+  source: "env" | "pool" | "local";
 }
 
 let cachedUserJwt:
@@ -62,17 +77,19 @@ export function loadMetadataConfig(): WindsurfMetadataConfig {
   };
 }
 
-export async function buildRequestMetadataBytes(sessionId: string = crypto.randomUUID()): Promise<Uint8Array> {
+export async function buildRequestMetadataBytes(
+  sessionId: string = crypto.randomUUID(),
+  account: WindsurfAccountCredentials = chooseWindsurfAccount(),
+): Promise<Uint8Array> {
   const config = loadMetadataConfig();
-  const apiKey = discoverMetadataApiKey(config);
-  const userJwt = await fetchUserJwt(apiKey, config);
+  const userJwt = await fetchUserJwt(account.apiKey, config);
   const requestId = takeRequestId();
   const deviceFingerprint = computeDeviceFingerprint();
 
   return concatBytes(
     encodeStringField(1, config.ideName),
     encodeStringField(2, config.extensionVersion),
-    encodeStringField(3, apiKey),
+    encodeStringField(3, account.apiKey),
     encodeStringField(4, config.locale),
     encodeStringField(5, JSON.stringify(buildOsInfo(config.os))),
     encodeStringField(7, config.ideVersion),
@@ -87,19 +104,37 @@ export async function buildRequestMetadataBytes(sessionId: string = crypto.rando
   );
 }
 
+export function chooseWindsurfAccount(config = loadMetadataConfig()): WindsurfAccountCredentials {
+  const chosen = loadWindsurfAccounts(config)[0];
+  if (!chosen) {
+    throw new Error("Unable to discover Windsurf api key. Set WINDSURF_METADATA_API_KEY/WINDSURF_API_KEY or add an account with pi-windsurf-account add-current.");
+  }
+  return chosen;
+}
+
+export function loadWindsurfAccounts(config = loadMetadataConfig()): WindsurfAccountCredentials[] {
+  const records = loadCredentialRecords(config.stateDir);
+  const accounts: WindsurfAccountCredentials[] = [];
+  const seen = new Set<string>();
+
+  for (const record of records) {
+    const account = normalizeCredentialRecord(record);
+    if (!account || seen.has(account.id)) {
+      continue;
+    }
+    seen.add(account.id);
+    accounts.push(account);
+  }
+
+  return accounts;
+}
+
+export function getAccountPoolFilePath(): string {
+  return expandHome(readEnv(["PI_WINDSURF_ACCOUNTS_FILE", "WINDSURF_ACCOUNTS_FILE"]) ?? DEFAULT_ACCOUNT_POOL_FILE);
+}
+
 export function discoverMetadataApiKey(config = loadMetadataConfig()): string {
-  const envValue = readEnv(["WINDSURF_METADATA_API_KEY", "WINDSURF_API_KEY"]);
-  if (envValue) {
-    return envValue;
-  }
-
-  const chosen = chooseAccount(loadCredentialRecords(config.stateDir));
-  const apiKey = typeof chosen?.apiKey === "string" ? chosen.apiKey.trim() : "";
-  if (apiKey) {
-    return apiKey;
-  }
-
-  throw new Error("Unable to discover Windsurf api key. Set WINDSURF_METADATA_API_KEY or WINDSURF_API_KEY.");
+  return chooseWindsurfAccount(config).apiKey;
 }
 
 export function discoverApiServerBaseUrl(config = loadMetadataConfig()): string | undefined {
@@ -108,9 +143,7 @@ export function discoverApiServerBaseUrl(config = loadMetadataConfig()): string 
     return envValue.replace(/\/+$/, "");
   }
 
-  const chosen = chooseAccount(loadCredentialRecords(config.stateDir));
-  const apiServerUrl = typeof chosen?.apiServerUrl === "string" ? chosen.apiServerUrl.trim() : "";
-  return apiServerUrl ? apiServerUrl.replace(/\/+$/, "") : undefined;
+  return chooseWindsurfAccount(config).apiServerUrl;
 }
 
 async function fetchUserJwt(apiKey: string, config: WindsurfMetadataConfig): Promise<string> {
@@ -166,13 +199,72 @@ async function fetchUserJwt(apiKey: string, config: WindsurfMetadataConfig): Pro
 }
 
 function loadCredentialRecords(stateDir: string): AccountRecord[] {
+  const envAccount = loadEnvAccountRecord();
+  if (envAccount) {
+    return [envAccount];
+  }
+
+  const configured = loadConfiguredAccountRecords();
+  if (configured.length > 0) {
+    configured.sort(compareActiveFirst);
+    return configured;
+  }
+
   const records = [...loadAccounts(stateDir), ...loadStateDatabaseAuthRecords(stateDir), ...loadWindowsStateDatabaseAuthRecords()];
   records.sort(compareActiveFirst);
   return records;
 }
 
-function chooseAccount(accounts: AccountRecord[]): AccountRecord | undefined {
-  return accounts.find((item) => item.isActive === true) ?? accounts[0];
+function loadEnvAccountRecord(): AccountRecord | undefined {
+  const apiKey = readEnv(["WINDSURF_METADATA_API_KEY", "WINDSURF_API_KEY"]);
+  if (!apiKey) {
+    return undefined;
+  }
+  return {
+    name: "env",
+    apiKey,
+    apiServerUrl: readEnv(["WINDSURF_API_SERVER_URL"]),
+    isActive: true,
+    source: "env",
+  };
+}
+
+function loadConfiguredAccountRecords(): AccountRecord[] {
+  const path = getAccountPoolFilePath();
+  if (!existsSync(path)) {
+    return [];
+  }
+
+  try {
+    const payload = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    const records = normalizeAccountsPayload(payload);
+    return records
+      .filter((record) => record.disabled !== true)
+      .map((record) => ({ ...record, source: "pool" }));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeCredentialRecord(record: AccountRecord): WindsurfAccountCredentials | undefined {
+  const apiKey = typeof record.apiKey === "string" ? record.apiKey.trim() : "";
+  if (!apiKey) {
+    return undefined;
+  }
+
+  const apiServerUrl = typeof record.apiServerUrl === "string" ? record.apiServerUrl.trim().replace(/\/+$/, "") : "";
+  const name = typeof record.name === "string" ? record.name.trim() : "";
+  const email = typeof record.email === "string" ? record.email.trim() : "";
+  const source = record.source === "env" || record.source === "pool" ? record.source : "local";
+
+  return {
+    id: getAccountId(apiKey),
+    name: name || undefined,
+    email: email || undefined,
+    apiKey,
+    apiServerUrl: apiServerUrl || undefined,
+    source,
+  };
 }
 
 function loadAccounts(stateDir: string): AccountRecord[] {
@@ -220,10 +312,11 @@ function loadAuthRecordsFromStateDatabase(path: string): AccountRecord[] {
   const windsurfState = rows.get("codeium.windsurf");
   const apiServerUrl = typeof windsurfState?.apiServerUrl === "string" ? windsurfState.apiServerUrl : undefined;
   const apiKey = typeof authStatus?.apiKey === "string" ? authStatus.apiKey : undefined;
+  const email = typeof windsurfState?.lastLoginEmail === "string" ? windsurfState.lastLoginEmail : undefined;
   if (!apiKey && !apiServerUrl) {
     return [];
   }
-  return [{ apiKey, apiServerUrl, isActive: true }];
+  return [{ apiKey, apiServerUrl, email, isActive: true, source: "local" }];
 }
 
 function readStateDatabaseJsonRows(path: string, keys: string[]): Map<string, Record<string, unknown>> {
