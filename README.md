@@ -143,7 +143,7 @@ Workflow inside Pi:
 /windsurf-account list
 ```
 
-`list` calls Windsurf `GetUserStatus` for each saved account and shows plan + credits. Use `--no-usage` for a local-only list.
+`list` calls Windsurf `GetUserStatus` for each saved account and shows only the useful fields by default: account name, email, plan, and daily/weekly remaining quota. Use `--verbose` to also show hash, URL, prompt, and flex credits. Use `--no-usage` for a local-only list.
 
 The same commands are available from shell if `pi-windsurf-account` is on `PATH`:
 
@@ -151,6 +151,7 @@ The same commands are available from shell if `pi-windsurf-account` is on `PATH`
 pi-windsurf-account add-current --name ws-a
 pi-windsurf-account list
 pi-windsurf-account list --no-usage
+pi-windsurf-account list --verbose
 ```
 
 Useful commands:

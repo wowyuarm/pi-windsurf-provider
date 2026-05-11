@@ -87,9 +87,10 @@ async function listAccounts() {
   }
 
   const showUsage = !hasFlag("--no-usage");
+  const verbose = hasFlag("--verbose") || hasFlag("-v");
   const usageByHash = new Map();
   if (showUsage) {
-    const results = await Promise.all(payload.accounts.map(async (account) => [hashKey(account.apiKey), await fetchUsageSummary(account)]));
+    const results = await Promise.all(payload.accounts.map(async (account) => [hashKey(account.apiKey), await fetchUsageSummary(account, verbose)]));
     for (const [hash, usage] of results) {
       usageByHash.set(hash, usage);
     }
@@ -102,9 +103,9 @@ async function listAccounts() {
     console.log([
       account.name ?? "(no name)",
       account.email ?? "-",
-      account.apiServerUrl ?? "-",
-      hash,
       showUsage ? usageByHash.get(hash) ?? "usage: unknown" : undefined,
+      verbose ? hash : undefined,
+      verbose ? account.apiServerUrl ?? "-" : undefined,
       flags.join(","),
     ].filter(Boolean).join("\t"));
   }
@@ -201,7 +202,7 @@ function readStateDatabaseJson(path, key) {
   }
 }
 
-async function fetchUsageSummary(account) {
+async function fetchUsageSummary(account, verbose = false) {
   try {
     const response = await fetch("https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus", {
       method: "POST",
@@ -227,33 +228,40 @@ async function fetchUsageSummary(account) {
     }
 
     const payload = await response.json();
-    return formatUsageSummary(payload);
+    return formatUsageSummary(payload, verbose);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return `usage: ${message.split("\n")[0].slice(0, 80)}`;
   }
 }
 
-function formatUsageSummary(payload) {
+function formatUsageSummary(payload, verbose = false) {
   const userStatus = payload?.userStatus;
   const planStatus = userStatus?.planStatus;
   const planInfo = planStatus?.planInfo;
   const planName = typeof planInfo?.planName === "string" ? planInfo.planName : "plan unknown";
 
-  const promptTotal = firstNumber(planStatus?.availablePromptCredits, planInfo?.monthlyPromptCredits);
-  const promptUsed = numberOrZero(planStatus?.usedPromptCredits);
-  const flexUsed = numberOrZero(planStatus?.usedFlexCredits);
-  const flexTotal = firstNumber(planInfo?.monthlyFlexCreditPurchaseAmount, planStatus?.availableFlexCredits !== undefined ? numberOrZero(planStatus.availableFlexCredits) + flexUsed : undefined);
+  const dailyRemaining = parseCreditNumber(planStatus?.dailyQuotaRemainingPercent);
+  const weeklyRemaining = parseCreditNumber(planStatus?.weeklyQuotaRemainingPercent);
+  const promptTotal = firstNumber(planInfo?.monthlyPromptCredits, planStatus?.availablePromptCredits);
+  const flexRemaining = parseCreditNumber(planStatus?.availableFlexCredits);
+  const flexUsed = parseCreditNumber(planStatus?.usedFlexCredits);
+  const flexTotal = firstNumber(planInfo?.monthlyFlexCreditPurchaseAmount, flexRemaining !== undefined && flexUsed !== undefined ? flexRemaining + flexUsed : undefined);
 
   const parts = [planName];
-  if (promptTotal !== undefined) {
-    parts.push(`prompt ${formatCredit(promptUsed)}/${formatCredit(promptTotal)}`);
+  if (dailyRemaining !== undefined) {
+    parts.push(`daily ${formatPercent(dailyRemaining)} left`);
   }
-  if (flexTotal !== undefined) {
-    parts.push(`flex ${formatCredit(flexUsed)}/${formatCredit(flexTotal)}`);
+  if (weeklyRemaining !== undefined) {
+    parts.push(`weekly ${formatPercent(weeklyRemaining)} left`);
   }
-  if (typeof planStatus?.planEnd === "string") {
-    parts.push(`reset ${planStatus.planEnd.slice(0, 10)}`);
+  if (verbose && promptTotal !== undefined) {
+    parts.push(`prompt ${formatCredit(promptTotal)}/mo`);
+  }
+  if (verbose && flexRemaining !== undefined) {
+    parts.push(flexTotal !== undefined && flexTotal !== flexRemaining
+      ? `flex ${formatCredit(flexRemaining)}/${formatCredit(flexTotal)} left`
+      : `flex ${formatCredit(flexRemaining)} left`);
   }
   return parts.join(" ");
 }
@@ -285,6 +293,10 @@ function parseCreditNumber(value) {
 
 function formatCredit(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatPercent(value) {
+  return `${formatCredit(value)}%`;
 }
 
 function readUsageTimeoutMs() {
@@ -367,7 +379,7 @@ function expandHome(value) {
 function printHelp() {
   console.log(`Usage:
   pi-windsurf-account add-current --name <name> [--file <path>]
-  pi-windsurf-account list [--file <path>] [--no-usage]
+  pi-windsurf-account list [--file <path>] [--no-usage] [--verbose]
   pi-windsurf-account remove <name> [--file <path>]
   pi-windsurf-account state
   pi-windsurf-account clear-state
