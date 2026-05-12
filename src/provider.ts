@@ -93,6 +93,13 @@ function streamWindsurf(
             });
             continue;
           }
+          if (!hasStreamedOutput(state) && isRateLimitError(error)) {
+            debugLog("account_rate_limited", {
+              account: describeAccount(account),
+              error: errorToMessage(error),
+            });
+            throw new Error(`Windsurf rate limited. Wait a few minutes and try again. (${errorToMessage(error)})`);
+          }
           throw error;
         }
       }
@@ -178,6 +185,12 @@ function isNonPersistentAccountRetryError(error: unknown): boolean {
   return isAccountVersionRejectedError(error)
     || isAccountServerTransientError(error);
 }
+
+function isRateLimitError(error: unknown): boolean {
+  const message = errorToMessage(error).toLowerCase();
+  return message.includes("rate limit") || message.includes("rate_limit");
+}
+
 
 /**
  * Check if the error is a quota/usage issue specific to this account.

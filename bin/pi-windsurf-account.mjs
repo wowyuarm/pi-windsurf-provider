@@ -243,7 +243,8 @@ function formatUsageSummary(payload, verbose = false) {
 
   const dailyRemaining = parseQuotaPercent(planStatus, "dailyQuotaRemainingPercent", "dailyQuotaResetAtUnix");
   const weeklyRemaining = parseQuotaPercent(planStatus, "weeklyQuotaRemainingPercent", "weeklyQuotaResetAtUnix");
-  const promptTotal = firstNumber(planInfo?.monthlyPromptCredits, planStatus?.availablePromptCredits);
+  const promptMonthly = parseCreditNumber(planInfo?.monthlyPromptCredits);
+  const promptAvailable = parseCreditNumber(planStatus?.availablePromptCredits);
   const flexRemaining = parseCreditNumber(planStatus?.availableFlexCredits);
   const flexUsed = parseCreditNumber(planStatus?.usedFlexCredits);
   const flexTotal = firstNumber(planInfo?.monthlyFlexCreditPurchaseAmount, flexRemaining !== undefined && flexUsed !== undefined ? flexRemaining + flexUsed : undefined);
@@ -255,8 +256,14 @@ function formatUsageSummary(payload, verbose = false) {
   if (weeklyRemaining !== undefined) {
     parts.push(`weekly ${formatPercent(weeklyRemaining)} left`);
   }
-  if (verbose && promptTotal !== undefined) {
-    parts.push(`prompt ${formatCredit(promptTotal)}/mo`);
+  if (verbose && promptAvailable !== undefined) {
+    if (promptMonthly !== undefined && promptMonthly !== promptAvailable) {
+      parts.push(`prompt ${formatCredit(promptAvailable)}/${formatCredit(promptMonthly)} left`);
+    } else {
+      parts.push(`prompt ${formatCredit(promptAvailable)}/mo`);
+    }
+  } else if (verbose && promptMonthly !== undefined) {
+    parts.push(`prompt ${formatCredit(promptMonthly)}/mo`);
   }
   if (verbose && flexRemaining !== undefined) {
     parts.push(flexTotal !== undefined && flexTotal !== flexRemaining

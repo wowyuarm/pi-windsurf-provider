@@ -114,7 +114,8 @@ export function createUpstreamHeaders(): HeadersInit {
     "Connect-Content-Encoding": "gzip",
     "Connect-Protocol-Version": "1",
     "Content-Type": "application/connect+proto",
-    "User-Agent": "connect-go/1.18.1 (go1.24.6 X:nocoverageredesign,synctest)",
+    "User-Agent": "connect-es/1.5.0",
+    "Connect-Timeout-Ms": "120000",
   };
 }
 
