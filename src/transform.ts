@@ -78,11 +78,24 @@ function resolveExternalModelUid(
   }
   if (modelId === "swe-1.6") return "swe-1-6";
   if (modelId === "swe-1.6-fast") return "swe-1-6-fast";
+  if (modelId === "gpt-5.5") {
+    const suffix = GPT_5_5_REASONING_SUFFIX[reasoning ?? "high"] ?? "-high";
+    return `gpt-5-5${suffix}`;
+  }
   return undefined;
 }
 
 // 4.7: every reasoning level maps to an explicit suffixed UID. Bare uid is rejected.
 const OPUS_4_7_REASONING_SUFFIX: Record<ThinkingLevel, string> = {
+  minimal: "-low",
+  low: "-low",
+  medium: "-medium",
+  high: "-high",
+  xhigh: "-xhigh",
+};
+
+// gpt-5.5: same pattern as 4.7 — every reasoning level maps to an explicit suffix
+const GPT_5_5_REASONING_SUFFIX: Record<ThinkingLevel, string> = {
   minimal: "-low",
   low: "-low",
   medium: "-medium",
@@ -128,6 +141,15 @@ export const WINDSURF_MODELS = [
     input: ["text"] as Array<"text">,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 200000,
+    maxTokens: 128000,
+  },
+  {
+    id: "gpt-5.5",
+    name: "GPT-5.5",
+    reasoning: true,
+    input: ["text"] as Array<"text">,
+    cost: { input: 1.25, output: 10, cacheRead: 0.25, cacheWrite: 2.5 },
+    contextWindow: 400000,
     maxTokens: 128000,
   },
   {
