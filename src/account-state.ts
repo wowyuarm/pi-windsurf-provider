@@ -70,7 +70,32 @@ export function getAccountId(apiKey: string): string {
 
 function isAccountCoolingDown(account: WindsurfAccountCredentials, state: NormalizedAccountState, now: number): boolean {
   const exhausted = state.exhausted[account.id];
-  return typeof exhausted?.until === "number" && exhausted.until > now;
+  return typeof exhausted?.until === "number"
+    && exhausted.until > now
+    && isUsageCooldownReason(exhausted.reason);
+}
+
+function isUsageCooldownReason(reason: string | undefined): boolean {
+  if (!reason) {
+    return true;
+  }
+
+  const message = reason.toLowerCase();
+  if (message.includes("third-party model provider is experiencing issues")) {
+    return false;
+  }
+
+  return [
+    "quota",
+    "usage limit",
+    "usage exceeded",
+    "usage exhausted",
+    "limit exceeded",
+    "credits exhausted",
+    "insufficient credits",
+    "quota_exceeded",
+    "resource_exhausted",
+  ].some((fragment) => message.includes(fragment));
 }
 
 function loadAccountState(): NormalizedAccountState {

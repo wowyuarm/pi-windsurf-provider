@@ -78,9 +78,16 @@ function streamWindsurf(
           if (options?.signal?.aborted === true) {
             throw error;
           }
-          if (!hasStreamedOutput(state) && isRecoverableAccountError(error)) {
+          if (!hasStreamedOutput(state) && isAccountQuotaError(error)) {
             markAccountExhausted(account, errorToMessage(error));
-            debugLog("account_unavailable", {
+            debugLog("account_quota_cooldown", {
+              account: describeAccount(account),
+              error: errorToMessage(error),
+            });
+            continue;
+          }
+          if (!hasStreamedOutput(state) && isNonPersistentAccountRetryError(error)) {
+            debugLog("account_retry_without_cooldown", {
               account: describeAccount(account),
               error: errorToMessage(error),
             });
@@ -167,9 +174,8 @@ function hasStreamedOutput(state: StreamState): boolean {
   return state.output.content.length > 0;
 }
 
-function isRecoverableAccountError(error: unknown): boolean {
-  return isAccountQuotaError(error)
-    || isAccountVersionRejectedError(error)
+function isNonPersistentAccountRetryError(error: unknown): boolean {
+  return isAccountVersionRejectedError(error)
     || isAccountServerTransientError(error);
 }
 
