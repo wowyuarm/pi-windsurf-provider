@@ -2,6 +2,19 @@
 
 Pi extension that exposes Windsurf upstream as Pi model provider `windsurf`.
 
+## Important note
+
+This project works, but it is **not** a drop-in full-time replacement for using Windsurf directly.
+
+Why:
+
+- Pi and Windsurf do not count prompt usage the same way
+- a Pi tool-using workflow can still consume prompts less efficiently than the official Windsurf/Cascade app
+- recent builds reduce this by sending only the new follow-up messages in the same conversation instead of replaying full history every time
+- more work and other approaches are still being explored to make this more usable
+
+If you mainly want the cheapest / safest day-to-day usage, do not route all of your work through this provider yet.
+
 ## What it does
 
 - Uses your local Windsurf account credentials
@@ -15,57 +28,10 @@ Pi extension that exposes Windsurf upstream as Pi model provider `windsurf`.
 ```text
 windsurf/swe-1.6                   Cognition SWE-1.6 (uid "swe-1-6")
 windsurf/swe-1.6-fast              Cognition SWE-1.6 Fast (uid "swe-1-6-fast")
+windsurf/gpt-5.5                   GPT-5.5 via Windsurf
 windsurf/claude-opus-4-7           Claude Opus 4.7 via Windsurf
-windsurf/claude-opus-4-6           Claude Opus 4.6 via Windsurf (auto thinking)
+windsurf/claude-opus-4-6           Claude Opus 4.6 via Windsurf
 ```
-
-### Model routing
-
-Windsurf upstream `GetChatMessageRequest` selects models by external
-`chat_model_uid` (field 21), with `use_internal_chat_model=false`:
-
-| Field | Name | Type | Value |
-|-------|------|------|-------|
-| 5 | `use_internal_chat_model` | bool | `0` |
-| 21 | `chat_model_uid` | string | resolved per-model UID |
-| 15 | `enterprise_chat_model_config` | message | max tokens / context window |
-
-The internal-enum path (field 6) is no longer used: SWE-1.6's old enum values
-(420/421) are rejected by upstream as "internal error". The current SWE UIDs
-are hyphenated (`swe-1-6`, `swe-1-6-fast`); the dotted forms `swe-1.6` /
-`swe-1.6-fast` are not accepted.
-
-Claude model parameters mirror Pi's native Anthropic model defaults:
-- contextWindow: 1M, maxTokens: 128K
-- cost: $5/M input, $25/M output
-
-### Reasoning (thinking) mapping
-
-Windsurf upstream is strict about which (UID, reasoning-suffix) combinations it
-accepts. Pi's `reasoning` level is translated separately for each model:
-
-**`claude-opus-4-7`** — every level uses an explicit suffixed UID; bare UID is rejected.
-
-| Pi reasoning      | Windsurf UID                |
-|-------------------|-----------------------------|
-| `minimal` / `low` | `claude-opus-4-7-low`       |
-| `medium`          | `claude-opus-4-7-medium`    |
-| `high` (default)  | `claude-opus-4-7-high`      |
-| `xhigh`           | `claude-opus-4-7-xhigh`     |
-
-**`claude-opus-4-6`** — only the bare UID and the dedicated `-thinking` UID are
-accepted; reasoning suffixes are rejected. Pi's reasoning level is mapped to a
-thinking on/off switch.
-
-| Pi reasoning      | Windsurf UID                  |
-|-------------------|-------------------------------|
-| `minimal` / `low` | `claude-opus-4-6`             |
-| `medium`          | `claude-opus-4-6-thinking`    |
-| `high` (default)  | `claude-opus-4-6-thinking`    |
-| `xhigh`           | `claude-opus-4-6-thinking`    |
-
-**`swe-1.6` / `swe-1.6-fast`** — only the bare UID is accepted; reasoning suffixes
-are rejected. The reasoning level Pi passes is currently ignored for these models.
 
 ## Install
 
@@ -81,7 +47,7 @@ Install from local path as Pi package:
 pi install /absolute/path/to/pi-windsurf-provider
 ```
 
-As Pi package after publishing repo:
+Install from GitHub:
 
 ```bash
 pi install git:https://github.com/wowyuarm/pi-windsurf-provider
@@ -104,15 +70,14 @@ pi -e /absolute/path/to/pi-windsurf-provider --provider windsurf --model claude-
 ## Requirements
 
 - Pi installed
-- Windsurf installed on same machine
+- Windsurf installed on the same machine
 - Windsurf logged in at least once on that machine so local account data exists
 
 Default setup uses your existing local Windsurf credentials. It does not need local `language_server`, but it does read Windsurf account data already stored on disk.
 
-Reads existing Windsurf account data from:
+Default discovery currently covers:
 
-- `~/.windsurf-server/data/User/globalStorage/**/accounts.json`
-- `~/.windsurf-server/data/User/globalStorage/state.vscdb`
+- Linux / WSL state dir: `~/.windsurf-server/data`
 - WSL Windows install: `/mnt/c/Users/*/AppData/Roaming/Windsurf/User/globalStorage/state.vscdb`
 
 In plain words:
@@ -121,9 +86,88 @@ In plain words:
 - yes, you need to have logged in already
 - yes, this extension uses that local existing credential state
 
+## macOS setup
+
+On macOS, set the Windsurf state directory explicitly before using the provider:
+
+```bash
+export WINDSURF_STATE_DIR="$HOME/Library/Application Support/Windsurf"
+```
+
+Minimal test:
+
+```bash
+WINDSURF_STATE_DIR="$HOME/Library/Application Support/Windsurf" \
+pi --provider windsurf --model swe-1.6 -p --no-session "Say OK"
+```
+
+If you want the request metadata to match macOS more closely, you can also try:
+
+```bash
+export WINDSURF_OS=darwin
+```
+
+## Model routing
+
+Windsurf upstream `GetChatMessageRequest` selects models by external `chat_model_uid` (field 21), with `use_internal_chat_model=false`.
+
+| Field | Name | Value |
+|-------|------|-------|
+| 5 | `use_internal_chat_model` | `0` |
+| 21 | `chat_model_uid` | resolved per-model UID |
+| 15 | `enterprise_chat_model_config` | max tokens / context window |
+
+The old SWE internal-enum path is no longer used. Upstream now rejects the old enum-based SWE path with internal errors. Current SWE routing uses hyphenated UIDs:
+
+- `swe-1-6`
+- `swe-1-6-fast`
+
+The dotted forms `swe-1.6` / `swe-1.6-fast` are model ids in Pi, not the upstream UIDs sent to Windsurf.
+
+## Reasoning mapping
+
+Windsurf is strict about which model UID variants it accepts. Pi reasoning levels are mapped per model.
+
+### `claude-opus-4-7`
+
+Every reasoning level uses an explicit suffixed UID. Bare UID is rejected.
+
+| Pi reasoning      | Windsurf UID                |
+|-------------------|-----------------------------|
+| `minimal` / `low` | `claude-opus-4-7-low`       |
+| `medium`          | `claude-opus-4-7-medium`    |
+| `high` (default)  | `claude-opus-4-7-high`      |
+| `xhigh`           | `claude-opus-4-7-xhigh`     |
+
+### `claude-opus-4-6`
+
+Uses either the base model or the separate `-thinking` variant.
+
+| Pi reasoning      | Windsurf UID                  |
+|-------------------|-------------------------------|
+| `minimal` / `low` | `claude-opus-4-6`             |
+| `medium`          | `claude-opus-4-6-thinking`    |
+| `high` (default)  | `claude-opus-4-6-thinking`    |
+| `xhigh`           | `claude-opus-4-6-thinking`    |
+
+### `gpt-5.5`
+
+Follows the same suffix pattern as Opus 4.7.
+
+| Pi reasoning      | Windsurf UID         |
+|-------------------|----------------------|
+| `minimal` / `low` | `gpt-5-5-low`        |
+| `medium`          | `gpt-5-5-medium`     |
+| `high` (default)  | `gpt-5-5-high`       |
+| `xhigh`           | `gpt-5-5-xhigh`      |
+
+### `swe-1.6` / `swe-1.6-fast`
+
+Only the bare UID is accepted. Pi reasoning is currently ignored for these models.
+
 ## Multiple accounts
 
-You can save several already-logged-in Windsurf accounts into a local account pool. The provider keeps using the last successful account, and only switches when Windsurf returns a usage/quota-style error before any answer text has streamed.
+You can save several already-logged-in Windsurf accounts into a local account pool.
 
 Default files:
 
@@ -143,31 +187,42 @@ Workflow inside Pi:
 /windsurf-account list
 ```
 
-`list` calls Windsurf `GetUserStatus` for each saved account and shows only the useful fields by default: account name, email, plan, and daily/weekly remaining quota. Use `--verbose` to also show hash, URL, prompt, and flex credits. Use `--no-usage` for a local-only list.
+The provider keeps using the last successful account, and only switches when Windsurf returns a recoverable account-side failure before any answer text has streamed.
 
-The same commands are available from shell if `pi-windsurf-account` is on `PATH`:
+`list` calls Windsurf `GetUserStatus` for each saved account and shows the useful fields by default: account name, email, plan, and daily/weekly remaining quota.
+
+Useful shell commands:
 
 ```bash
 pi-windsurf-account add-current --name ws-a
 pi-windsurf-account list
 pi-windsurf-account list --no-usage
 pi-windsurf-account list --verbose
+pi-windsurf-account remove ws-a
+pi-windsurf-account state
+pi-windsurf-account clear-state
+pi-windsurf-account where
 ```
-
-Useful commands:
-
-```text
-/windsurf-account remove ws-a
-/windsurf-account state
-/windsurf-account clear-state
-/windsurf-account where
-```
-
-Shell equivalents use the same arguments with `pi-windsurf-account`.
 
 The account file is written with `0600` permissions. It contains Windsurf API keys, so do not commit or share it.
 
-If the account pool exists and has accounts, the provider uses the pool. If it does not exist or is empty, it falls back to the current local Windsurf login as before.
+If the account pool exists and has accounts, the provider uses the pool. If it does not exist or is empty, it falls back to the current local Windsurf login.
+
+## Current behavior notes
+
+### Prompt usage
+
+Recent builds now send only the new continuation messages in the same conversation instead of replaying the full message history on every follow-up request. This is meant to reduce waste and make tool-using flows less expensive.
+
+That said, prompt usage still does **not** perfectly match the official Windsurf app, so treat this project as useful but not fully solved.
+
+### Error handling
+
+Recent builds also improved how account failures are treated:
+
+- usage / quota problems can trigger account failover
+- some temporary upstream-side failures are retried without permanently punishing that account
+- rate limit errors are surfaced more clearly
 
 ## Optional env
 
@@ -175,6 +230,7 @@ If the account pool exists and has accounts, the provider uses the pool. If it d
 - `WINDSURF_API_KEY`
 - `WINDSURF_API_SERVER_URL`
 - `WINDSURF_STATE_DIR`
+- `WINDSURF_OS`
 - `PI_WINDSURF_ACCOUNTS_FILE`
 - `PI_WINDSURF_ACCOUNT_STATE_FILE`
 - `PI_WINDSURF_ACCOUNT_COOLDOWN_MS`
@@ -190,6 +246,6 @@ Default upstream endpoint is discovered from local Windsurf state when available
 
 ## Notes
 
-- Extension is packaged for Pi community sharing through `pi install`
-- Default model guidance is distilled from captured real Windsurf Cascade requests, then adapted to Pi runtime instead of copied verbatim
-- Output history and tool follow-up have been verified in real Pi sessions
+- packaged for `pi install`
+- model behavior was inferred from captured real Windsurf Cascade requests, then adapted for Pi
+- output history and tool follow-up have been verified in real Pi sessions
