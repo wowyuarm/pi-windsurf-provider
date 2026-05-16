@@ -214,6 +214,16 @@ If the account pool exists and has accounts, the provider uses the pool. If it d
 
 Recent builds now send only the new continuation messages in the same conversation instead of replaying the full message history on every follow-up request. This is meant to reduce waste and make tool-using flows less expensive.
 
+For normal tool continuations, the provider sends the new tool result and does **not** resend the original user prompt. Windsurf keeps the conversation state by `conversation_id`.
+
+If a Pi steer / mid-run user instruction is inserted while a tool call is in flight, the next continuation sends that new steer plus the tool result. It still does **not** resend older user prompts. The steer itself is a new user instruction, so it may still count as a new prompt.
+
+With `PI_WINDSURF_PROVIDER_DEBUG=1`, check the request log:
+
+- first user turn: `upstreamHasUserMessage: true`
+- plain tool continuation: `upstreamHasUserMessage: false`
+- steered continuation: `upstreamHasUserMessage: true`, but `upstreamTail` should contain only the new steer, not older prompts
+
 That said, prompt usage still does **not** perfectly match the official Windsurf app, so treat this project as useful but not fully solved.
 
 ### Error handling
