@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+
 import {
   calculateCost,
   type Api,
@@ -189,7 +191,7 @@ export function buildGetChatMessageRequest(
   const parts: Uint8Array[] = [
     encodeMessageField(1, metadataBytes),
     encodeStringField(2, buildSystemPrompt(context)),
-    ...convertMessages(deltaMessages).map((message) => encodeMessageField(3, message)),
+    ...convertMessages(deltaMessages, context.messages, conversationId).map((message) => encodeMessageField(3, message)),
     encodeVarintField(5, 0),
     encodeStringField(21, externalUid),
     encodeVarintField(7, REQUEST_TYPE_GENERAL),
@@ -360,14 +362,14 @@ function buildSystemPrompt(context: Context): string {
   return `${basePrompt}\n\n<pi_system_prompt>\n${prompt}\n</pi_system_prompt>`;
 }
 
-function convertMessages(messages: Message[]): Uint8Array[] {
+function convertMessages(messages: Message[], allMessages: Message[], conversationId: string): Uint8Array[] {
   const prompts: Uint8Array[] = [];
 
   for (const message of messages) {
     if (message.role === "user") {
       prompts.push(
         concatBytes(
-          encodeStringField(1, crypto.randomUUID()),
+          encodeStringField(1, stablePromptMessageId("user", conversationId, message, allMessages)),
           encodeVarintField(2, CHAT_MESSAGE_SOURCE_USER),
           encodeStringField(3, stringifyContent(message.content)),
           encodeVarintField(5, 1),
@@ -407,7 +409,7 @@ function convertMessages(messages: Message[]): Uint8Array[] {
     }
 
     const parts: Uint8Array[] = [
-      encodeStringField(1, crypto.randomUUID()),
+      encodeStringField(1, stablePromptMessageId("tool", conversationId, message, allMessages)),
       encodeVarintField(2, CHAT_MESSAGE_SOURCE_TOOL),
       encodeStringField(3, formatToolResult(message.toolName, stringifyContent(message.content), message.isError)),
       encodeBoolField(8, true),
@@ -508,6 +510,19 @@ function stringifyContent(content: Message["content"]): string {
       return "[non-text content omitted]";
     })
     .join("\n");
+}
+
+function stablePromptMessageId(prefix: string, conversationId: string, message: Message, allMessages: Message[]): string {
+  const index = allMessages.indexOf(message);
+  const seed = JSON.stringify({
+    conversationId,
+    index,
+    role: message.role,
+    content: message.role === "toolResult"
+      ? { toolCallId: message.toolCallId, toolName: message.toolName, content: stringifyContent(message.content), isError: message.isError }
+      : stringifyContent(message.content),
+  });
+  return `${prefix}-${createHash("sha256").update(seed).digest("hex").slice(0, 32)}`;
 }
 
 function encodeToolCall(toolCall: ToolCall): Uint8Array {
@@ -736,8 +751,9 @@ export function getWindsurfDeltaMessages(messages: Message[], conversationId: st
     const stored = parseStoredResponseId(message.responseId);
     if (stored?.conversationId && stored.conversationId === conversationId) {
       const delta = messages.slice(index + 1);
-      if (delta[0]?.role === "toolResult" && hasAssistantToolCalls(message)) {
-        return [message, ...delta];
+      if (isToolContinuation(delta) && hasAssistantToolCalls(message)) {
+        const userIndex = findLatestUserIndexBefore(messages, index);
+        return userIndex === undefined ? [message, ...delta] : messages.slice(userIndex);
       }
       return delta;
     }
@@ -745,8 +761,21 @@ export function getWindsurfDeltaMessages(messages: Message[], conversationId: st
   return messages;
 }
 
+function isToolContinuation(messages: Message[]): boolean {
+  return messages.length > 0 && messages.every((message) => message.role === "toolResult" || message.role === "user");
+}
+
 function hasAssistantToolCalls(message: Message): boolean {
   return message.role === "assistant" && extractAssistantToolCalls(message.content).length > 0;
+}
+
+function findLatestUserIndexBefore(messages: Message[], beforeIndex: number): number | undefined {
+  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      return index;
+    }
+  }
+  return undefined;
 }
 
 export function getOrCreateConversationId(messages: Message[]): string {
@@ -760,7 +789,7 @@ export function getOrCreateConversationId(messages: Message[]): string {
       return stored.conversationId;
     }
   }
-  return crypto.randomUUID();
+  return randomUUID();
 }
 
 export function getStoredWindsurfAccountId(messages: Message[]): string | undefined {

@@ -151,26 +151,17 @@ const steeredContinuationPrompts = requestPromptSummaries(steeredConversation);
 assert(newConversationPrompts.length === 1, "new conversation should send one prompt message");
 assert(newConversationPrompts[0].source === 1, "new conversation should send the user message");
 assert(storedAccountId === "account-1", "stored Windsurf account id should be recovered from responseId");
-assert(continuationDelta.length === 2, "tool continuation delta should contain the assistant tool-call anchor and the tool result");
-assert(continuationDelta[0].role === "assistant", "tool continuation delta should keep the assistant tool-call anchor");
-assert(continuationDelta[1].role === "toolResult", "tool continuation delta should contain the tool result");
-assert(continuationPrompts.length === 2, "tool continuation request should encode the assistant tool-call anchor and one tool message");
-assert(continuationPrompts[0].source === 2, "tool continuation request should encode the assistant tool-call anchor");
-assert(continuationPrompts[1].source === 4, "tool continuation request should encode a tool message");
-assert(!continuationPrompts.some((prompt) => prompt.source === 1), "continuation request must not resend user messages");
-assert(!continuationPrompts.some((prompt) => prompt.content?.includes("first user prompt")), "continuation request must not contain the original user prompt text");
+assert(continuationDelta.map((message) => message.role).join(",") === "user,assistant,toolResult", "tool continuation delta should replay the current task with stable ids");
+assert(continuationPrompts.map((prompt) => prompt.source).join(",") === "1,2,4", "tool continuation request should encode current user, assistant anchor, and tool message");
+assert(continuationPrompts[0].content === "first user prompt", "tool continuation should include the latest user request for model context");
 
-assert(parallelDelta.map((message) => message.role).join(",") === "assistant,toolResult,toolResult", "parallel tool continuation should send the assistant tool-call anchor and both tool results");
-assert(parallelContinuationPrompts.map((prompt) => prompt.source).join(",") === "2,4,4", "parallel tool continuation should encode assistant anchor plus two tool messages");
-assert(!parallelContinuationPrompts.some((prompt) => prompt.source === 1), "parallel tool continuation must not resend user messages");
-assert(!parallelContinuationPrompts.some((prompt) => prompt.content?.includes("first user prompt")), "parallel tool continuation must not contain the original user prompt text");
+assert(parallelDelta.map((message) => message.role).join(",") === "user,assistant,toolResult,toolResult", "parallel tool continuation should replay current task plus assistant anchor and both tool results");
+assert(parallelContinuationPrompts.map((prompt) => prompt.source).join(",") === "1,2,4,4", "parallel tool continuation should encode current user, assistant anchor, plus two tool messages");
 
-assert(steeredDelta.map((message) => message.role).join(",") === "user,toolResult", "steered continuation should send the new steer and the tool result");
-assert(steeredContinuationPrompts.length === 2, "steered continuation should encode the steer and the tool result");
-assert(steeredContinuationPrompts[0].source === 1, "steered continuation should encode the new steer as a user message");
-assert(steeredContinuationPrompts[0].content === "STEER: change direction now", "steered continuation should send the new steer text");
-assert(steeredContinuationPrompts[1].source === 4, "steered continuation should encode the tool result after the steer");
-assert(!steeredContinuationPrompts.some((prompt) => prompt.content?.includes("first user prompt")), "steered continuation must not contain the original user prompt text");
+assert(steeredDelta.map((message) => message.role).join(",") === "user,assistant,user,toolResult", "steered continuation should replay current task, assistant anchor, new steer, and tool result");
+assert(steeredContinuationPrompts.map((prompt) => prompt.source).join(",") === "1,2,1,4", "steered continuation should encode current user, assistant anchor, new steer, and tool result");
+assert(steeredContinuationPrompts[2].content === "STEER: change direction now", "steered continuation should send the new steer text");
+assert(steeredContinuationPrompts[0].content === "first user prompt", "steered continuation should include the original task for model context");
 
 console.log(JSON.stringify({
   ok: true,
