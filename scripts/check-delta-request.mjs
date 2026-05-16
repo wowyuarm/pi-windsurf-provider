@@ -107,9 +107,18 @@ const toolResult = {
 };
 
 const fullConversation = [userMessage, assistantToolUse, toolResult];
+const steeredConversation = [
+  userMessage,
+  assistantToolUse,
+  { role: "user", content: "STEER: change direction now" },
+  toolResult,
+];
+
 const newConversationPrompts = requestPromptSummaries([userMessage]);
 const continuationDelta = getWindsurfDeltaMessages(fullConversation, "cid-1");
 const continuationPrompts = requestPromptSummaries(fullConversation);
+const steeredDelta = getWindsurfDeltaMessages(steeredConversation, "cid-1");
+const steeredContinuationPrompts = requestPromptSummaries(steeredConversation);
 
 assert(newConversationPrompts.length === 1, "new conversation should send one prompt message");
 assert(newConversationPrompts[0].source === 1, "new conversation should send the user message");
@@ -120,8 +129,16 @@ assert(continuationPrompts[0].source === 4, "continuation request should encode 
 assert(!continuationPrompts.some((prompt) => prompt.source === 1), "continuation request must not resend user messages");
 assert(!continuationPrompts.some((prompt) => prompt.content?.includes("first user prompt")), "continuation request must not contain the original user prompt text");
 
+assert(steeredDelta.map((message) => message.role).join(",") === "user,toolResult", "steered continuation should send the new steer and the tool result");
+assert(steeredContinuationPrompts.length === 2, "steered continuation should encode the steer and the tool result");
+assert(steeredContinuationPrompts[0].source === 1, "steered continuation should encode the new steer as a user message");
+assert(steeredContinuationPrompts[0].content === "STEER: change direction now", "steered continuation should send the new steer text");
+assert(steeredContinuationPrompts[1].source === 4, "steered continuation should encode the tool result after the steer");
+assert(!steeredContinuationPrompts.some((prompt) => prompt.content?.includes("first user prompt")), "steered continuation must not contain the original user prompt text");
+
 console.log(JSON.stringify({
   ok: true,
   newConversationPrompts: newConversationPrompts.map((prompt) => ({ source: prompt.source, content: prompt.content })),
   continuationPrompts: continuationPrompts.map((prompt) => ({ source: prompt.source, content: prompt.content })),
+  steeredContinuationPrompts: steeredContinuationPrompts.map((prompt) => ({ source: prompt.source, content: prompt.content })),
 }, null, 2));
