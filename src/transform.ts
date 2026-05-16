@@ -735,10 +735,18 @@ export function getWindsurfDeltaMessages(messages: Message[], conversationId: st
     }
     const stored = parseStoredResponseId(message.responseId);
     if (stored?.conversationId && stored.conversationId === conversationId) {
-      return messages.slice(index + 1);
+      const delta = messages.slice(index + 1);
+      if (delta[0]?.role === "toolResult" && hasAssistantToolCalls(message)) {
+        return [message, ...delta];
+      }
+      return delta;
     }
   }
   return messages;
+}
+
+function hasAssistantToolCalls(message: Message): boolean {
+  return message.role === "assistant" && extractAssistantToolCalls(message.content).length > 0;
 }
 
 export function getOrCreateConversationId(messages: Message[]): string {

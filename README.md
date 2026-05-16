@@ -214,7 +214,7 @@ If the account pool exists and has accounts, the provider uses the pool. If it d
 
 Recent builds now send only the new continuation messages in the same conversation instead of replaying the full message history on every follow-up request. This is meant to reduce waste and make tool-using flows less expensive.
 
-For normal tool continuations, the provider sends the new tool result and does **not** resend the original user prompt. Windsurf keeps the conversation state by `conversation_id`.
+For normal tool continuations, the provider sends the previous assistant tool-call anchor plus the new tool result(s), and does **not** resend the original user prompt. Windsurf keeps the conversation state by `conversation_id`. The assistant anchor is needed for Claude-style tool calls and also covers parallel tool calls.
 
 That server-side conversation state is account-scoped. New provider responses store both the Windsurf `conversation_id` and the owning account id, so continuations stay on the same account instead of accidentally switching accounts mid-conversation. Older sessions created before this metadata existed may need a fresh session if they hit `permission_denied` during continuation.
 
