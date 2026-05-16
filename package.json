@@ -24,7 +24,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test:delta": "node scripts/check-delta-request.mjs",
+    "test:context": "node scripts/check-context-request.mjs",
     "smoke:list-models": "pi -e . --list-models windsurf",
     "smoke:account-cli": "node bin/pi-windsurf-account.mjs where"
   },

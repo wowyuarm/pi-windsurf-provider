@@ -24,7 +24,7 @@ import {
   finalizeStream,
   getOrCreateConversationId,
   getStoredWindsurfAccountId,
-  getWindsurfDeltaMessages,
+  getWindsurfUpstreamMessages,
   type StreamState,
   WINDSURF_MODELS,
 } from "./transform.ts";
@@ -127,7 +127,7 @@ async function runWindsurfAttempt(
   stream: AssistantMessageEventStream,
 ): Promise<void> {
   const metadataBytes = await buildRequestMetadataBytes(conversationId, account);
-  const deltaMessages = getWindsurfDeltaMessages(context.messages, conversationId);
+  const upstreamMessages = getWindsurfUpstreamMessages(context.messages);
   const requestBytes = buildGetChatMessageRequest(model, context, metadataBytes, conversationId, options?.reasoning);
   const body = encodeConnectBinaryRequest(requestBytes);
   const url = buildUpstreamUrl(account);
@@ -137,12 +137,12 @@ async function runWindsurfAttempt(
     model: model.id,
     url,
     contextMessages: context.messages.length,
-    upstreamMessages: deltaMessages.length,
-    upstreamRoles: summarizeMessageRoles(deltaMessages),
-    upstreamHasUserMessage: deltaMessages.some((message) => message.role === "user"),
+    upstreamMessages: upstreamMessages.length,
+    upstreamRoles: summarizeMessageRoles(upstreamMessages),
+    upstreamHasUserMessage: upstreamMessages.some((message) => message.role === "user"),
     tools: (context.tools ?? []).length,
     contextTail: summarizeMessages(context.messages.slice(-4)),
-    upstreamTail: summarizeMessages(deltaMessages.slice(-4)),
+    upstreamTail: summarizeMessages(upstreamMessages.slice(-4)),
   });
 
   const response = await fetch(url, {

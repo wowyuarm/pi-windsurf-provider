@@ -212,24 +212,23 @@ If the account pool exists and has accounts, the provider uses the pool. If it d
 
 ### Prompt usage
 
-Recent builds no longer generate fresh random ids for already-sent user/tool messages. This matters because Windsurf's server-side `conversation_id` is not enough to reconstruct full model context for every model path.
+Recent builds send the current Pi branch history on every request instead of relying on Windsurf's server-side `conversation_id` to restore model context. In practice, `conversation_id` is useful metadata, but it is not a reliable context store across all model paths.
 
-For tool continuations, the provider now replays the current task slice:
+The provider therefore replays the visible conversation history needed by the model:
 
-- latest user request
-- previous assistant tool-call anchor
-- new tool result(s)
+- normal follow-up: previous user/assistant/tool messages plus the new user message
+- tool continuation: user request, assistant tool-call anchor, and tool result(s)
+- steered continuation: original task, assistant tool-call anchor, new steer, and tool result(s)
 
-The replayed user message uses a stable id, so it is the same logical user prompt rather than a new random prompt every continuation. This keeps Claude/GPT tool continuations coherent while avoiding the earlier behavior where the same user prompt was resent with a new id each time.
+Replayed user/tool/assistant fallback messages use stable ids, so the same logical message is not resent with a fresh random id every turn. Local and trial-account tests showed normal follow-up and multi-step tool flows continue correctly on `swe-1.6` and `claude-opus-4-6`, with no visible trial quota change in those short tests. Still, quota semantics are controlled by Windsurf and may change.
 
-The assistant tool-call anchor is required for Claude-style tool calls and also covers parallel tool calls. The server-side conversation state is account-scoped, so new provider responses store both the Windsurf `conversation_id` and the owning account id; continuations stay on the same account instead of accidentally switching accounts mid-conversation. Older sessions created before this metadata existed may need a fresh session if they hit `permission_denied` during continuation.
-
-If a Pi steer / mid-run user instruction is inserted while a tool call is in flight, the next continuation replays the current task, includes the new steer, and includes the tool result. The steer itself is a new user instruction, so it may still count as a new prompt.
+The server-side conversation state is account-scoped, so new provider responses store both the Windsurf `conversation_id` and the owning account id; continuations stay on the same account instead of accidentally switching accounts mid-conversation. Older sessions created before this metadata existed may need a fresh session if they hit `permission_denied` during continuation.
 
 With `PI_WINDSURF_PROVIDER_DEBUG=1`, check the request log:
 
 - first user turn: `upstreamRoles: { user: 1 }`
-- plain tool continuation: `upstreamRoles` should include the current user, assistant anchor, and tool result(s)
+- normal follow-up: `upstreamRoles` should include previous history plus the new user message
+- tool continuation: `upstreamRoles` should include the user request, assistant anchor, and tool result(s)
 - parallel tool continuation: `upstreamRoles` should include one assistant anchor and all tool results
 
 That said, prompt usage still does **not** perfectly match the official Windsurf app, so treat this project as useful but not fully solved.
