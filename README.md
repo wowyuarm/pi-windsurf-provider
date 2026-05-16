@@ -224,6 +224,8 @@ Replayed user/tool/assistant fallback messages use stable ids, so the same logic
 
 The server-side conversation state is account-scoped, so new provider responses store both the Windsurf `conversation_id` and the owning account id; continuations stay on the same account instead of accidentally switching accounts mid-conversation. Older sessions created before this metadata existed may need a fresh session if they hit `permission_denied` during continuation.
 
+If an upstream request fails after partial output (for example `deadline_exceeded` from the third-party model provider), Windsurf does not appear to provide a reusable hidden reasoning signature. The provider therefore converts the failed assistant attempt's already-streamed thinking/text into ordinary assistant context for the next request, so a following `continue` can recover the visible work. Once a later assistant turn succeeds, that failed-attempt recovery block is dropped from future requests.
+
 With `PI_WINDSURF_PROVIDER_DEBUG=1`, check the request log:
 
 - first user turn: `upstreamRoles: { user: 1 }`

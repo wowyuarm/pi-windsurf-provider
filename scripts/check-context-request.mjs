@@ -129,6 +129,25 @@ const assistantAnswer = {
   timestamp: 4,
 };
 const followUpUser = { role: "user", timestamp: 5, content: "second user prompt" };
+const failedAssistant = {
+  role: "assistant",
+  responseId: "bot-failed",
+  content: [
+    { type: "thinking", thinking: "partial private reasoning" },
+    { type: "text", text: "partial visible answer" },
+  ],
+  stopReason: "error",
+  errorMessage: "deadline_exceeded: provider unavailable",
+  timestamp: 9,
+};
+const postFailureUser = { role: "user", timestamp: 10, content: "continue after failure" };
+const successfulRecovery = {
+  role: "assistant",
+  responseId: "wsrid:v2:account-1:cid-1:bot-recovered",
+  content: [{ type: "text", text: "recovered answer" }],
+  stopReason: "stop",
+  timestamp: 11,
+};
 
 const fullConversation = [userMessage, assistantToolUse, toolResult];
 const normalFollowUpConversation = [userMessage, assistantToolUse, toolResult, assistantAnswer, followUpUser];
@@ -168,6 +187,10 @@ const parallelUpstream = getWindsurfUpstreamMessages(parallelConversation);
 const parallelContinuationPrompts = requestPromptSummaries(parallelConversation);
 const steeredUpstream = getWindsurfUpstreamMessages(steeredConversation);
 const steeredContinuationPrompts = requestPromptSummaries(steeredConversation);
+const failureRecoveryConversation = [userMessage, assistantAnswer, failedAssistant, postFailureUser];
+const failureRecoveryPrompts = requestPromptSummaries(failureRecoveryConversation);
+const recoveredConversation = [userMessage, assistantAnswer, failedAssistant, postFailureUser, successfulRecovery, { role: "user", timestamp: 12, content: "after recovery" }];
+const recoveredPrompts = requestPromptSummaries(recoveredConversation);
 
 assert(newConversationPrompts.length === 1, "new conversation should send one prompt message");
 assert(newConversationPrompts[0].source === 1, "new conversation should send the user message");
@@ -189,6 +212,12 @@ assert(steeredContinuationPrompts.map((prompt) => prompt.source).join(",") === "
 assert(steeredContinuationPrompts[2].content === "STEER: change direction now", "steered continuation should send the new steer text");
 assert(steeredContinuationPrompts[0].content === "first user prompt", "steered continuation should include the original task for model context");
 
+assert(failureRecoveryPrompts.map((prompt) => prompt.source).join(",") === "1,2,2,1", "failure recovery should replay the failed assistant attempt as ordinary assistant context");
+assert(failureRecoveryPrompts[2].content?.includes("Previous assistant attempt failed"), "failure recovery should mark the previous attempt as failed");
+assert(failureRecoveryPrompts[2].content?.includes("partial private reasoning"), "failure recovery should expose partial reasoning as ordinary context after an upstream failure");
+assert(!failureRecoveryPrompts[2].content?.includes("source: 11"), "failure recovery content should be plain text, not hidden thinking");
+assert(recoveredPrompts.map((prompt) => prompt.content ?? "").join("\n").includes("partial private reasoning") === false, "failed assistant recovery context should disappear after a successful assistant turn");
+
 console.log(JSON.stringify({
   ok: true,
   newConversationPrompts: newConversationPrompts.map((prompt) => ({ id: prompt.id, source: prompt.source, content: prompt.content })),
@@ -196,4 +225,5 @@ console.log(JSON.stringify({
   normalFollowUpPrompts: normalFollowUpPrompts.map((prompt) => ({ id: prompt.id, source: prompt.source, content: prompt.content })),
   parallelContinuationPrompts: parallelContinuationPrompts.map((prompt) => ({ id: prompt.id, source: prompt.source, content: prompt.content })),
   steeredContinuationPrompts: steeredContinuationPrompts.map((prompt) => ({ id: prompt.id, source: prompt.source, content: prompt.content })),
+  failureRecoveryPrompts: failureRecoveryPrompts.map((prompt) => ({ id: prompt.id, source: prompt.source, content: prompt.content })),
 }, null, 2));

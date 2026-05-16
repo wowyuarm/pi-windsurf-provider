@@ -387,14 +387,17 @@ function convertMessages(messages: Message[], allMessages: Message[], conversati
         encodeVarintField(2, CHAT_MESSAGE_SOURCE_ASSISTANT),
       ];
 
-      const text = stringifyAssistantText(message.content);
+      const failed = message.stopReason === "error" || message.stopReason === "aborted";
+      const text = failed ? stringifyFailedAssistantContext(message) : stringifyAssistantText(message.content);
       if (text) {
         parts.push(encodeStringField(3, text));
       }
 
-      const thinking = stringifyAssistantThinking(message.content);
-      if (thinking) {
-        parts.push(encodeStringField(11, thinking));
+      if (!failed) {
+        const thinking = stringifyAssistantThinking(message.content);
+        if (thinking) {
+          parts.push(encodeStringField(11, thinking));
+        }
       }
 
       const toolCalls = extractAssistantToolCalls(message.content);
@@ -495,6 +498,32 @@ function stringifyAssistantThinking(content: Message["content"]): string {
     .filter((block): block is { type: "thinking"; thinking: string } => block.type === "thinking")
     .map((block) => block.thinking)
     .join("\n");
+}
+
+function stringifyFailedAssistantContext(message: AssistantMessage): string {
+  const thinking = stringifyAssistantThinking(message.content).trim();
+  const text = stringifyAssistantText(message.content).trim();
+  const lines = [
+    "[Previous assistant attempt failed before completion.]",
+  ];
+  if (message.errorMessage) {
+    lines.push(`Error: ${message.errorMessage}`);
+  }
+  if (thinking) {
+    lines.push("", "Partial reasoning captured before the failure:", truncateFailedAssistantContext(thinking));
+  }
+  if (text) {
+    lines.push("", "Partial visible answer captured before the failure:", text);
+  }
+  return lines.join("\n").trim();
+}
+
+function truncateFailedAssistantContext(text: string): string {
+  const maxLength = 12000;
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength)}\n[truncated]`;
 }
 
 function stringifyContent(content: Message["content"]): string {
@@ -743,15 +772,26 @@ function closeToolCalls(state: StreamState, stream: AssistantMessageEventStream)
  * same logical messages instead of becoming fresh random prompts every turn.
  */
 export function getWindsurfUpstreamMessages(messages: Message[]): Message[] {
-  return messages.filter((message) => {
+  const lastSuccessfulAssistantIndex = findLastSuccessfulAssistantIndex(messages);
+  return messages.filter((message, index) => {
     if (message.role !== "assistant") {
       return true;
     }
     if (message.stopReason !== "error" && message.stopReason !== "aborted") {
       return true;
     }
-    return message.content.length > 0;
+    return index > lastSuccessfulAssistantIndex && message.content.length > 0;
   });
+}
+
+function findLastSuccessfulAssistantIndex(messages: Message[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted") {
+      return index;
+    }
+  }
+  return -1;
 }
 
 export function getWindsurfDeltaMessages(messages: Message[], _conversationId: string): Message[] {
