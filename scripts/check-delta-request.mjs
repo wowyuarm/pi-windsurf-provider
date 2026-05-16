@@ -1,4 +1,4 @@
-import { buildGetChatMessageRequest, getWindsurfDeltaMessages } from "../src/transform.ts";
+import { buildGetChatMessageRequest, createStreamState, finalizeStream, getStoredWindsurfAccountId, getWindsurfDeltaMessages } from "../src/transform.ts";
 
 function readVarint(bytes, offset) {
   let value = 0n;
@@ -65,13 +65,7 @@ function promptSummary(promptBytes) {
 
 function requestPromptSummaries(messages, conversationId = "cid-1") {
   const request = buildGetChatMessageRequest(
-    {
-      id: "swe-1.6",
-      api: "windsurf-upstream",
-      provider: "windsurf",
-      contextWindow: 200000,
-      maxTokens: 128000,
-    },
+    model,
     { messages, tools: [] },
     new Uint8Array(),
     conversationId,
@@ -88,10 +82,23 @@ function assert(condition, message) {
   }
 }
 
+const model = {
+  id: "swe-1.6",
+  api: "windsurf-upstream",
+  provider: "windsurf",
+  contextWindow: 200000,
+  maxTokens: 128000,
+};
+
+const state = createStreamState(model, "cid-1");
+state.output.responseId = "bot-1";
+finalizeStream(state, { push() {} }, "account-1");
+assert(state.output.responseId === "wsrid:v2:account-1:cid-1:bot-1", "finalized responseId should store the owning Windsurf account id");
+
 const userMessage = { role: "user", content: "first user prompt" };
 const assistantToolUse = {
   role: "assistant",
-  responseId: "wsrid:cid-1:bot-1",
+  responseId: "wsrid:v2:account-1:cid-1:bot-1",
   content: [
     { type: "thinking", thinking: "thinking" },
     { type: "toolCall", toolCallId: "tool-1", name: "bash", input: { command: "printf DELTA_OK" } },
@@ -117,11 +124,13 @@ const steeredConversation = [
 const newConversationPrompts = requestPromptSummaries([userMessage]);
 const continuationDelta = getWindsurfDeltaMessages(fullConversation, "cid-1");
 const continuationPrompts = requestPromptSummaries(fullConversation);
+const storedAccountId = getStoredWindsurfAccountId(fullConversation);
 const steeredDelta = getWindsurfDeltaMessages(steeredConversation, "cid-1");
 const steeredContinuationPrompts = requestPromptSummaries(steeredConversation);
 
 assert(newConversationPrompts.length === 1, "new conversation should send one prompt message");
 assert(newConversationPrompts[0].source === 1, "new conversation should send the user message");
+assert(storedAccountId === "account-1", "stored Windsurf account id should be recovered from responseId");
 assert(continuationDelta.length === 1, "continuation delta should contain only new messages after the last Windsurf assistant response");
 assert(continuationDelta[0].role === "toolResult", "continuation delta should contain the tool result");
 assert(continuationPrompts.length === 1, "continuation request should encode only one prompt message");

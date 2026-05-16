@@ -23,6 +23,7 @@ import {
   failStream,
   finalizeStream,
   getOrCreateConversationId,
+  getStoredWindsurfAccountId,
   getWindsurfDeltaMessages,
   type StreamState,
   WINDSURF_MODELS,
@@ -53,12 +54,13 @@ function streamWindsurf(
 
   void (async () => {
     const conversationId = getOrCreateConversationId(context.messages);
+    const conversationAccountId = getStoredWindsurfAccountId(context.messages);
     const state = createStreamState(model, conversationId);
     stream.push({ type: "start", partial: state.output });
 
     try {
       const allAccounts = loadWindsurfAccounts();
-      const accounts = orderAccountsForAttempt(allAccounts);
+      const accounts = selectAccountsForConversation(allAccounts, conversationAccountId);
       if (allAccounts.length === 0) {
         throw new Error("No Windsurf account found. Log in to Windsurf once, or run pi-windsurf-account add-current after logging in.");
       }
@@ -71,7 +73,7 @@ function streamWindsurf(
         try {
           await runWindsurfAttempt(account, model, context, options, conversationId, state, stream);
           markAccountSuccessful(account);
-          finalizeStream(state, stream);
+          finalizeStream(state, stream, account.id);
           stream.end();
           return;
         } catch (error) {
@@ -181,6 +183,27 @@ function buildUpstreamUrl(account: WindsurfAccountCredentials): string {
     return `${account.apiServerUrl}${DEFAULT_ENDPOINT}`;
   }
   return `${DEFAULT_BASE_URL}${DEFAULT_ENDPOINT}`;
+}
+
+function selectAccountsForConversation(
+  allAccounts: WindsurfAccountCredentials[],
+  conversationAccountId: string | undefined,
+): WindsurfAccountCredentials[] {
+  if (!conversationAccountId) {
+    return orderAccountsForAttempt(allAccounts);
+  }
+
+  const owner = allAccounts.find((account) => account.id === conversationAccountId);
+  if (!owner) {
+    throw new Error("This Windsurf conversation belongs to an account that is not configured anymore. Start a new session or re-add that account.");
+  }
+
+  const available = orderAccountsForAttempt(allAccounts);
+  if (!available.some((account) => account.id === owner.id)) {
+    return [];
+  }
+
+  return [owner];
 }
 
 function hasStreamedOutput(state: StreamState): boolean {

@@ -216,6 +216,8 @@ Recent builds now send only the new continuation messages in the same conversati
 
 For normal tool continuations, the provider sends the new tool result and does **not** resend the original user prompt. Windsurf keeps the conversation state by `conversation_id`.
 
+That server-side conversation state is account-scoped. New provider responses store both the Windsurf `conversation_id` and the owning account id, so continuations stay on the same account instead of accidentally switching accounts mid-conversation. Older sessions created before this metadata existed may need a fresh session if they hit `permission_denied` during continuation.
+
 If a Pi steer / mid-run user instruction is inserted while a tool call is in flight, the next continuation sends that new steer plus the tool result. It still does **not** resend older user prompts. The steer itself is a new user instruction, so it may still count as a new prompt.
 
 With `PI_WINDSURF_PROVIDER_DEBUG=1`, check the request log:

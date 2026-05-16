@@ -279,11 +279,11 @@ export function applyResponseFrame(
   }
 }
 
-export function finalizeStream(state: StreamState, stream: AssistantMessageEventStream): void {
+export function finalizeStream(state: StreamState, stream: AssistantMessageEventStream, accountId?: string): void {
   closeTextIfOpen(state, stream);
   closeThinkingIfOpen(state, stream);
   closeToolCalls(state, stream);
-  state.output.responseId = encodeStoredResponseId(state.conversationId, state.output.responseId);
+  state.output.responseId = encodeStoredResponseId(state.conversationId, state.output.responseId, accountId);
 
   if (state.output.stopReason === "error" || state.output.stopReason === "aborted") {
     stream.push({ type: "error", reason: state.output.stopReason, error: state.output });
@@ -755,11 +755,43 @@ export function getOrCreateConversationId(messages: Message[]): string {
   return crypto.randomUUID();
 }
 
-function parseStoredResponseId(value: string | undefined): { conversationId: string; messageId: string } | undefined {
+export function getStoredWindsurfAccountId(messages: Message[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant") {
+      continue;
+    }
+    const stored = parseStoredResponseId(message.responseId);
+    if (stored?.accountId) {
+      return stored.accountId;
+    }
+  }
+  return undefined;
+}
+
+function parseStoredResponseId(value: string | undefined): { accountId?: string; conversationId: string; messageId: string } | undefined {
   if (!value?.startsWith("wsrid:")) {
     return undefined;
   }
   const remainder = value.slice("wsrid:".length);
+  if (remainder.startsWith("v2:")) {
+    const first = remainder.indexOf(":", 3);
+    if (first === -1) {
+      return undefined;
+    }
+    const second = remainder.indexOf(":", first + 1);
+    if (second === -1) {
+      return undefined;
+    }
+    const accountId = remainder.slice(3, first);
+    const conversationId = remainder.slice(first + 1, second);
+    const messageId = remainder.slice(second + 1);
+    if (!accountId || !conversationId || !messageId) {
+      return undefined;
+    }
+    return { accountId, conversationId, messageId };
+  }
+
   const separator = remainder.indexOf(":");
   if (separator === -1) {
     return undefined;
@@ -772,9 +804,12 @@ function parseStoredResponseId(value: string | undefined): { conversationId: str
   return { conversationId, messageId };
 }
 
-function encodeStoredResponseId(conversationId: string, messageId: string | undefined): string | undefined {
+function encodeStoredResponseId(conversationId: string, messageId: string | undefined, accountId?: string): string | undefined {
   if (!messageId) {
     return undefined;
+  }
+  if (accountId) {
+    return `wsrid:v2:${accountId}:${conversationId}:${messageId}`;
   }
   return `wsrid:${conversationId}:${messageId}`;
 }
