@@ -16,13 +16,15 @@
     "README.md",
     "LICENSE",
     "src",
-    "bin"
+    "bin",
+    "scripts"
   ],
   "bin": {
     "pi-windsurf-account": "./bin/pi-windsurf-account.mjs"
   },
   "scripts": {
     "check": "tsc --noEmit",
+    "test:delta": "node scripts/check-delta-request.mjs",
     "smoke:list-models": "pi -e . --list-models windsurf",
     "smoke:account-cli": "node bin/pi-windsurf-account.mjs where"
   },

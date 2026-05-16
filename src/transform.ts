@@ -184,7 +184,7 @@ export function buildGetChatMessageRequest(
     throw new Error(`Unsupported Windsurf model: ${model.id}`);
   }
 
-  const deltaMessages = sliceDeltaMessages(context.messages, conversationId);
+  const deltaMessages = getWindsurfDeltaMessages(context.messages, conversationId);
 
   const parts: Uint8Array[] = [
     encodeMessageField(1, metadataBytes),
@@ -727,7 +727,7 @@ function closeToolCalls(state: StreamState, stream: AssistantMessageEventStream)
  * This prevents double-charging for prompt credits when tool results are
  * sent as follow-up requests within the same conversation.
  */
-function sliceDeltaMessages(messages: Message[], conversationId: string): Message[] {
+export function getWindsurfDeltaMessages(messages: Message[], conversationId: string): Message[] {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "assistant") {

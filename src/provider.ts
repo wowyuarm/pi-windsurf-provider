@@ -23,6 +23,7 @@ import {
   failStream,
   finalizeStream,
   getOrCreateConversationId,
+  getWindsurfDeltaMessages,
   type StreamState,
   WINDSURF_MODELS,
 } from "./transform.ts";
@@ -124,6 +125,7 @@ async function runWindsurfAttempt(
   stream: AssistantMessageEventStream,
 ): Promise<void> {
   const metadataBytes = await buildRequestMetadataBytes(conversationId, account);
+  const deltaMessages = getWindsurfDeltaMessages(context.messages, conversationId);
   const requestBytes = buildGetChatMessageRequest(model, context, metadataBytes, conversationId, options?.reasoning);
   const body = encodeConnectBinaryRequest(requestBytes);
   const url = buildUpstreamUrl(account);
@@ -132,9 +134,13 @@ async function runWindsurfAttempt(
     account: describeAccount(account),
     model: model.id,
     url,
-    messages: context.messages.length,
+    contextMessages: context.messages.length,
+    upstreamMessages: deltaMessages.length,
+    upstreamRoles: summarizeMessageRoles(deltaMessages),
+    upstreamHasUserMessage: deltaMessages.some((message) => message.role === "user"),
     tools: (context.tools ?? []).length,
-    tail: summarizeContextTail(context),
+    contextTail: summarizeMessages(context.messages.slice(-4)),
+    upstreamTail: summarizeMessages(deltaMessages.slice(-4)),
   });
 
   const response = await fetch(url, {
@@ -229,8 +235,12 @@ function isAccountVersionRejectedError(error: unknown): boolean {
  */
 function isAccountServerTransientError(error: unknown): boolean {
   const message = errorToMessage(error).toLowerCase();
+  if (!message.includes("internal error occurred")) {
+    return false;
+  }
   return message.includes("invalid_argument")
-    && message.includes("internal error occurred");
+    || message.includes("permission_denied")
+    || message.includes("unknown:");
 }
 
 function errorToMessage(error: unknown): string {
@@ -241,8 +251,16 @@ function describeAccount(account: WindsurfAccountCredentials): string {
   return account.name ?? account.email ?? `${account.source}:${account.id}`;
 }
 
-function summarizeContextTail(context: Context): unknown[] {
-  return context.messages.slice(-4).map((message) => {
+function summarizeMessageRoles(messages: Context["messages"]): Record<string, number> {
+  const roles: Record<string, number> = {};
+  for (const message of messages) {
+    roles[message.role] = (roles[message.role] ?? 0) + 1;
+  }
+  return roles;
+}
+
+function summarizeMessages(messages: Context["messages"]): unknown[] {
+  return messages.map((message) => {
     if (message.role === "user") {
       return { role: "user", content: typeof message.content === "string" ? message.content.slice(0, 120) : "blocks" };
     }
