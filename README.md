@@ -28,6 +28,7 @@ If you mainly want the cheapest / safest day-to-day usage, do not route all of y
 ```text
 windsurf/swe-1.6                   Cognition SWE-1.6 (uid "swe-1-6")
 windsurf/swe-1.6-fast              Cognition SWE-1.6 Fast (uid "swe-1-6-fast")
+windsurf/kimi-k2.6                 Kimi K2.6 via Windsurf
 windsurf/gpt-5.5                   GPT-5.5 via Windsurf
 windsurf/claude-opus-4-7           Claude Opus 4.7 via Windsurf
 windsurf/claude-opus-4-6           Claude Opus 4.6 via Windsurf
@@ -160,6 +161,14 @@ Follows the same suffix pattern as Opus 4.7.
 | `medium`          | `gpt-5-5-medium`     |
 | `high` (default)  | `gpt-5-5-high`       |
 | `xhigh`           | `gpt-5-5-xhigh`      |
+
+### `kimi-k2.6`
+
+Only the bare UID is accepted. Pi reasoning is currently ignored for this model.
+
+| Pi reasoning | Windsurf UID |
+|--------------|--------------|
+| all levels   | `kimi-k2-6`  |
 
 ### `swe-1.6` / `swe-1.6-fast`
 

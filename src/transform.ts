@@ -65,6 +65,7 @@ const TOOL_READ_ONLY_HINT_NAMES = new Set([
 //                       to the separate -thinking variant, NOT by suffix.
 //   swe-1-6 / swe-1-6-fast : ONLY the bare uid; any -low/-medium/-high suffix
 //                            is rejected.
+//   kimi-k2.6  : ONLY the bare uid (same as swe-1.6).
 function resolveExternalModelUid(
   modelId: string,
   reasoning?: ThinkingLevel,
@@ -80,6 +81,7 @@ function resolveExternalModelUid(
   }
   if (modelId === "swe-1.6") return "swe-1-6";
   if (modelId === "swe-1.6-fast") return "swe-1-6-fast";
+  if (modelId === "kimi-k2.6") return "kimi-k2-6";
   if (modelId === "gpt-5.5") {
     const suffix = GPT_5_5_REASONING_SUFFIX[reasoning ?? "high"] ?? "-high";
     return `gpt-5-5${suffix}`;
@@ -152,6 +154,15 @@ export const WINDSURF_MODELS = [
     input: ["text"] as Array<"text">,
     cost: { input: 1.25, output: 10, cacheRead: 0.25, cacheWrite: 2.5 },
     contextWindow: 400000,
+    maxTokens: 128000,
+  },
+  {
+    id: "kimi-k2.6",
+    name: "Kimi K2.6",
+    reasoning: true,
+    input: ["text"] as Array<"text">,
+    cost: { input: 0.50, output: 2, cacheRead: 0.10, cacheWrite: 0.50 },
+    contextWindow: 262144,
     maxTokens: 128000,
   },
   {
